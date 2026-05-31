@@ -9,10 +9,12 @@ ROS 2 workspace with a single package, `rebotarm_monitor`, that subscribes to
 the topics published by a running reBot Arm B601-DM driver and publishes
 `diagnostic_msgs/DiagnosticArray` on `/diagnostics`.
 
-![rqt_robot_monitor view of the RebotArm diagnostic tree](docs/rqt_robot_monitor.png)
-
-*`rqt_robot_monitor` showing the aggregated diagnostic tree produced by the
-package.*
+<p align="center">
+  <img src="docs/readme_banner.png" alt="reBot Arm B601-DM and aggregated diagnostics in rqt_robot_monitor" width="92%"/>
+</p>
+<p align="center">
+  <sub><strong>Left:</strong> reBot Arm B601-DM &nbsp;·&nbsp; <strong>Right:</strong> aggregated diagnostics in <code>rqt_robot_monitor</code></sub>
+</p>
 
 ## Contents
 
@@ -92,6 +94,8 @@ ros2 launch rebotarm_monitor monitor.launch.py \
 ```
 rebotarm_monitor_ros2/
 ├── docs/
+│   ├── readme_banner.png
+│   ├── rebot_arm.png
 │   └── rqt_robot_monitor.png
 └── src/
     └── rebotarm_monitor/        # ament_python package
