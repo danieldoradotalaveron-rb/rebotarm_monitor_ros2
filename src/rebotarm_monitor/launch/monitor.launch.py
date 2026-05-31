@@ -1,7 +1,11 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -9,8 +13,11 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     pkg_share = FindPackageShare("rebotarm_monitor")
     config_file = PathJoinSubstitution([pkg_share, "config", "monitor.yaml"])
-    aggregator_config = PathJoinSubstitution(
+    aggregator_serial = PathJoinSubstitution(
         [pkg_share, "config", "diagnostic_aggregator.yaml"]
+    )
+    aggregator_can = PathJoinSubstitution(
+        [pkg_share, "config", "diagnostic_aggregator_can.yaml"]
     )
 
     joint_states_topic = LaunchConfiguration("joint_states_topic")
@@ -125,13 +132,33 @@ def generate_launch_description():
                     },
                 ],
             ),
+            # Two aggregator instances, mutually exclusive: with vs without CAN
+            # bus group. Avoids the Bus group reporting STALE on serial-only setups.
             Node(
                 package="diagnostic_aggregator",
                 executable="aggregator_node",
                 name="diagnostic_aggregator",
                 output="screen",
-                parameters=[aggregator_config],
-                condition=IfCondition(use_diagnostic_aggregator),
+                parameters=[aggregator_serial],
+                condition=IfCondition(
+                    PythonExpression([
+                        "'", use_diagnostic_aggregator, "' == 'true' and '",
+                        enable_can_monitor, "' != 'true'",
+                    ])
+                ),
+            ),
+            Node(
+                package="diagnostic_aggregator",
+                executable="aggregator_node",
+                name="diagnostic_aggregator",
+                output="screen",
+                parameters=[aggregator_can],
+                condition=IfCondition(
+                    PythonExpression([
+                        "'", use_diagnostic_aggregator, "' == 'true' and '",
+                        enable_can_monitor, "' == 'true'",
+                    ])
+                ),
             ),
         ]
     )
