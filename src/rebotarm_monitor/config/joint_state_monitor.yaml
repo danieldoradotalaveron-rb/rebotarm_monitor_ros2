@@ -1,0 +1,42 @@
+rebotarm_joint_state_monitor:
+  ros__parameters:
+    enable_joint_states_monitor: true
+    enable_per_joint_monitor: true
+    enable_arm_status_monitor: true
+    enable_gripper_monitor: true
+    log_only_on_change: true
+
+    joint_states_topic: /rebotarm/joint_states
+    expected_rate_hz: 100.0
+    stale_timeout_s: 0.5
+    min_rate_ratio: 0.5
+    max_position_jump_rad: 0.5
+    max_abs_velocity_rad_s: 10.0
+    max_abs_effort_nm: 8.0
+
+    joint_state_topic_prefix: /rebotarm/joints
+    joint_names: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    per_joint_stale_timeout_s: 0.5
+    max_abs_joint_velocity_rad_s: 10.0
+    max_abs_joint_torque_nm: 8.0
+    idle_velocity_threshold_rad_s: 0.05
+    idle_torque_warn_nm: 3.0
+    max_joint_position_jump_rad: 0.5
+    max_joint_torque_jump_nm: 3.0
+    expected_enabled_status_code: 1
+    allow_disabled_status_code: true
+    disabled_status_code: 0
+
+    arm_status_topic: /rebotarm/arm_status
+    arm_status_stale_timeout_s: 1.0
+    arm_status_warn_on_snapshot_age: false
+    expect_arm_enabled: false
+    expect_control_loop_active: false
+
+    gripper_state_topic: /rebotarm/gripper/state
+    gripper_stale_timeout_s: 1.0
+    max_abs_gripper_velocity: 10.0
+    max_abs_gripper_torque: 5.0
+
+    status_log_period_s: 1.0
+    diagnostics_period_s: 1.0
