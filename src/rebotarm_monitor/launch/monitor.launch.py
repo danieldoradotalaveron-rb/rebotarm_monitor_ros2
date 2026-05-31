@@ -8,9 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     pkg_share = FindPackageShare("rebotarm_monitor")
-    config_file = PathJoinSubstitution(
-        [pkg_share, "config", "joint_state_monitor.yaml"]
-    )
+    config_file = PathJoinSubstitution([pkg_share, "config", "monitor.yaml"])
     aggregator_config = PathJoinSubstitution(
         [pkg_share, "config", "diagnostic_aggregator.yaml"]
     )
@@ -25,6 +23,11 @@ def generate_launch_description():
     status_log_period_s = LaunchConfiguration("status_log_period_s")
     diagnostics_period_s = LaunchConfiguration("diagnostics_period_s")
     use_diagnostic_aggregator = LaunchConfiguration("use_diagnostic_aggregator")
+    enable_can_monitor = LaunchConfiguration("enable_can_monitor")
+    can_interfaces = LaunchConfiguration("can_interfaces")
+    enable_process_monitor = LaunchConfiguration("enable_process_monitor")
+    driver_process_pattern = LaunchConfiguration("driver_process_pattern")
+    driver_process_pid = LaunchConfiguration("driver_process_pid")
 
     return LaunchDescription(
         [
@@ -49,10 +52,38 @@ def generate_launch_description():
                 default_value="true",
                 description="Start diagnostic_aggregator for rqt_robot_monitor",
             ),
+            DeclareLaunchArgument(
+                "enable_can_monitor",
+                default_value="true",
+                description=(
+                    "Enable SocketCAN interface health checks. Set to false "
+                    "if the host has no CAN interfaces."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "can_interfaces",
+                default_value="can0",
+                description="Comma-separated SocketCAN interfaces (e.g. can0,can1)",
+            ),
+            DeclareLaunchArgument(
+                "enable_process_monitor",
+                default_value="true",
+                description="Enable driver process health checks (psutil)",
+            ),
+            DeclareLaunchArgument(
+                "driver_process_pattern",
+                default_value="reBotArmController",
+                description="Substring match against process name or cmdline",
+            ),
+            DeclareLaunchArgument(
+                "driver_process_pid",
+                default_value="0",
+                description="Force PID; 0 means auto-discover by pattern",
+            ),
             Node(
                 package="rebotarm_monitor",
-                executable="joint_state_monitor",
-                name="rebotarm_joint_state_monitor",
+                executable="monitor",
+                name="rebotarm_monitor",
                 output="screen",
                 parameters=[
                     config_file,
@@ -66,6 +97,11 @@ def generate_launch_description():
                         "max_abs_effort_nm": max_abs_effort_nm,
                         "status_log_period_s": status_log_period_s,
                         "diagnostics_period_s": diagnostics_period_s,
+                        "enable_can_monitor": enable_can_monitor,
+                        "can_interfaces": can_interfaces,
+                        "enable_process_monitor": enable_process_monitor,
+                        "driver_process_pattern": driver_process_pattern,
+                        "driver_process_pid": driver_process_pid,
                     },
                 ],
             ),

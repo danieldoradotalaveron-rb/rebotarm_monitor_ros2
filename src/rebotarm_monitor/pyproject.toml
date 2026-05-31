@@ -1,0 +1,21 @@
+# ament_python packages still need setup.py for `data_files` (launch/, config/
+# files get installed into share/<pkg>/ from there). This pyproject.toml adds
+# the modern build-system declaration and tooling config (pytest, ruff) on top.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "-ra -q"
+
+[tool.ruff]
+line-length = 95
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"test/*" = ["E402"]

@@ -1,4 +1,4 @@
-rebotarm_joint_state_monitor:
+/**:
   ros__parameters:
     enable_joint_states_monitor: true
     enable_per_joint_monitor: true
@@ -37,6 +37,20 @@ rebotarm_joint_state_monitor:
     gripper_stale_timeout_s: 1.0
     max_abs_gripper_velocity: 10.0
     max_abs_gripper_torque: 5.0
+
+    enable_can_monitor: true
+    can_interfaces: "can0"
+    can_warn_on_iface_down: true
+    can_error_warn_per_period: 1
+    can_dropped_warn_per_period: 10
+
+    enable_process_monitor: true
+    driver_process_pattern: "reBotArmController"
+    driver_process_pid: 0
+    driver_cpu_warn_percent: 90.0
+    driver_rss_warn_mb: 1024.0
+    driver_threads_warn: 64
+    driver_zombie_is_error: true
 
     status_log_period_s: 1.0
     diagnostics_period_s: 1.0

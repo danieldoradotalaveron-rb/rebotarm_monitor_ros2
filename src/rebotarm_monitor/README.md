@@ -1,16 +1,19 @@
 # rebotarm_monitor
 
-`ament_python` package that subscribes to the reBot Arm B601-DM driver topics
-and publishes diagnostics in the standard `diagnostic_msgs` format.
+`ament_python` package that subscribes to the reBot Arm B601-DM driver topics,
+polls a few host metrics (SocketCAN counters, driver process health) and
+publishes diagnostics in the standard `diagnostic_msgs` format.
 
 ## Node
 
 | Field | Value |
 |-------|-------|
 | Package | `rebotarm_monitor` |
-| Executable | `joint_state_monitor` |
-| Default node name | `rebotarm_joint_state_monitor` |
+| Executable | `monitor` (alias: `joint_state_monitor`) |
+| Default node name | `rebotarm_monitor` |
 | Launch file | `launch/monitor.launch.py` |
+| YAML defaults | `config/monitor.yaml` |
+| Aggregator analyzers | `config/diagnostic_aggregator.yaml` |
 
 ## Subscribed topics
 
@@ -35,17 +38,26 @@ and publishes diagnostics in the standard `diagnostic_msgs` format.
 
 ## Diagnostic names
 
-| Name | Source topic | Checks |
-|------|--------------|--------|
+| Name | Source | Checks |
+|------|--------|--------|
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | rate, stale timeout, finite values, value jumps, high velocity, high effort |
 | `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque, `status_code` |
-| `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` | enabled, mode, control loop active, state machine, `error_codes` |
-| `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, `status_code`, high velocity, high torque |
+| `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
+| `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
+| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (delta per cycle) |
+| `rebotarm/system/driver` | `psutil` | resolution by name/PID, CPU%, RSS, threads, FDs, zombie/stopped state |
 
 ## Parameters
 
-Full list with defaults: `config/joint_state_monitor.yaml`.
-Aggregator analyzers: `config/diagnostic_aggregator.yaml`.
+ROS 2 parameter resolution order (lowest → highest):
+
+1. Defaults declared in `rebotarm_monitor/parameters.py`.
+2. `config/monitor.yaml` loaded by the launch file.
+3. The `LaunchConfiguration` dict in `monitor.launch.py`.
+4. CLI overrides on `ros2 launch ... key:=value`.
+
+`config/monitor.yaml` uses the wildcard `/**:` block so it applies regardless
+of the node name you launch with.
 
 Most-used parameters:
 
@@ -62,6 +74,15 @@ Most-used parameters:
 | `arm_status_stale_timeout_s` | `1.0` |
 | `arm_status_warn_on_snapshot_age` | `false` |
 | `gripper_stale_timeout_s` | `1.0` |
+| `enable_can_monitor` | `true` |
+| `can_interfaces` | `"can0"` (comma-separated) |
+| `can_error_warn_per_period` | `1` |
+| `can_dropped_warn_per_period` | `10` |
+| `enable_process_monitor` | `true` |
+| `driver_process_pattern` | `"reBotArmController"` |
+| `driver_cpu_warn_percent` | `90.0` |
+| `driver_rss_warn_mb` | `1024.0` |
+| `driver_threads_warn` | `64` |
 | `status_log_period_s` | `1.0` |
 | `diagnostics_period_s` | `1.0` |
 
@@ -73,5 +94,36 @@ ros2 launch rebotarm_monitor monitor.launch.py \
   max_abs_effort_nm:=12.0
 
 ros2 launch rebotarm_monitor monitor.launch.py \
+  enable_can_monitor:=false   # host has no CAN
+
+ros2 launch rebotarm_monitor monitor.launch.py \
   use_diagnostic_aggregator:=false
 ```
+
+## Internal layout
+
+```
+rebotarm_monitor/
+├── node.py             # ROS 2 adapter (rclpy + timers + publisher)
+├── orchestrator.py     # owns trackers, builds DiagnosticArray
+├── factories.py        # composition root: params dict → trackers
+├── parameters.py       # declare + load ROS parameters
+├── domain/             # HealthTracker ABC, TrackerContext
+├── trackers/           # one strategy per concern
+├── adapters/           # SysFsReader + ProcessInspector (real & fake)
+└── support/            # diagnostics helpers, rate window
+```
+
+Trackers depend only on `domain/` and `adapters/`; the orchestrator only on
+`domain/`; the node only on `parameters.py`, `factories.py`, and the
+orchestrator. This keeps logic testable without rclpy.
+
+## Tests
+
+```bash
+colcon test --packages-select rebotarm_monitor
+colcon test-result --verbose
+```
+
+Tests use `FakeSysFsReader` and `FakeProcessInspector` so they run without a
+real CAN device or driver process.

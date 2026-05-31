@@ -6,7 +6,8 @@
 [![Build system: colcon](https://img.shields.io/badge/build-colcon-9cf)](https://colcon.readthedocs.io/)
 
 ROS 2 workspace with a single package, `rebotarm_monitor`, that subscribes to
-the topics published by a running reBot Arm B601-DM driver and publishes
+the topics published by a running reBot Arm B601-DM driver, polls a few host
+metrics (SocketCAN counters, driver process health), and publishes
 `diagnostic_msgs/DiagnosticArray` on `/diagnostics`.
 
 <p align="center">
@@ -18,8 +19,10 @@ the topics published by a running reBot Arm B601-DM driver and publishes
 - [Requirements](#requirements)
 - [Build](#build)
 - [Run](#run)
-- [Topics](#topics)
+- [What it reports](#what-it-reports)
 - [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Testing](#testing)
 - [Repository layout](#repository-layout)
 - [License](#license)
 
@@ -29,6 +32,8 @@ the topics published by a running reBot Arm B601-DM driver and publishes
 - A sourced ROS 2 workspace that provides `rebotarm_msgs` (built from the
   Seeed reBot Arm driver workspace with `colcon`).
 - A running `reBotArmController` node.
+- `python3-psutil` (declared as an `exec_depend`; install with `rosdep` or
+  `apt install python3-psutil`).
 
 ## Build
 
@@ -47,23 +52,43 @@ ros2 launch rebotarm_monitor monitor.launch.py
 ros2 run rqt_robot_monitor rqt_robot_monitor   # optional GUI
 ```
 
-## Topics
+The launch file starts the monitor node plus a `diagnostic_aggregator` so the
+output is ready to be visualised in `rqt_robot_monitor`.
 
-| Direction | Topic | Type |
-|-----------|-------|------|
-| sub | `/rebotarm/joint_states` | `sensor_msgs/JointState` |
-| sub | `/rebotarm/joints/jointN/state` (N = 1..6) | `rebotarm_msgs/JointMotorState` |
-| sub | `/rebotarm/arm_status` (latched) | `rebotarm_msgs/ArmStatus` |
-| sub | `/rebotarm/gripper/state` | `rebotarm_msgs/JointMotorState` |
-| pub | `/diagnostics` | `diagnostic_msgs/DiagnosticArray` |
-| pub | `/diagnostics_agg` | `diagnostic_msgs/DiagnosticArray` |
-| pub | `/diagnostics_toplevel_state` | `diagnostic_msgs/DiagnosticStatus` |
+## What it reports
+
+Each `DiagnosticStatus` in `/diagnostics` corresponds to one tracker. By
+default every tracker is enabled; turn off the ones you don't need via the
+launch arguments listed below.
+
+| Diagnostic name | Source | Default |
+|-----------------|--------|---------|
+| `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | on |
+| `rebotarm/joints/jointN` (N=1..6) | `/rebotarm/joints/jointN/state` | on |
+| `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` (latched) | on |
+| `rebotarm/gripper/state` | `/rebotarm/gripper/state` | on |
+| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | on (set `enable_can_monitor:=false` if you have no CAN) |
+| `rebotarm/system/driver` | `psutil` lookup of the driver process | on |
+
+Topics published:
+
+| Topic | Type |
+|-------|------|
+| `/diagnostics` | `diagnostic_msgs/DiagnosticArray` |
+| `/diagnostics_agg` | `diagnostic_msgs/DiagnosticArray` (from aggregator) |
+| `/diagnostics_toplevel_state` | `diagnostic_msgs/DiagnosticStatus` (from aggregator) |
 
 ## Configuration
 
-Defaults live in `src/rebotarm_monitor/config/joint_state_monitor.yaml` and
-`src/rebotarm_monitor/config/diagnostic_aggregator.yaml`. The most common
-settings are also exposed as launch arguments:
+ROS 2 parameters resolve in this order (lowest → highest precedence):
+
+1. Defaults declared in `rebotarm_monitor/parameters.py`.
+2. YAML loaded by the launch file (`config/monitor.yaml`).
+3. The `LaunchConfiguration` dict passed in the launch (overrides #2 for the
+   subset of parameters the launch exposes as `DeclareLaunchArgument`).
+4. CLI overrides: `ros2 launch ... key:=value`.
+
+The most-used parameters are exposed as launch arguments:
 
 | Argument | Default |
 |----------|---------|
@@ -75,15 +100,64 @@ settings are also exposed as launch arguments:
 | `max_abs_velocity_rad_s` | `10.0` |
 | `max_abs_effort_nm` | `8.0` |
 | `status_log_period_s` | `1.0` |
-| `diagnostics_period_s` | `0.0` (same as `status_log_period_s`) |
+| `diagnostics_period_s` | `0.0` (means same as `status_log_period_s`) |
+| `enable_can_monitor` | `true` |
+| `can_interfaces` | `can0` (comma-separated list, e.g. `can0,can1`) |
+| `enable_process_monitor` | `true` |
+| `driver_process_pattern` | `reBotArmController` |
+| `driver_process_pid` | `0` (auto-discover by pattern) |
 | `use_diagnostic_aggregator` | `true` |
 
-Example:
+Example overrides:
 
 ```bash
 ros2 launch rebotarm_monitor monitor.launch.py \
   expected_rate_hz:=50.0 \
-  max_abs_effort_nm:=12.0
+  max_abs_effort_nm:=12.0 \
+  enable_can_monitor:=false
+```
+
+For the full list (per-joint thresholds, status-code mapping, etc.) edit
+`config/monitor.yaml`.
+
+## Architecture
+
+The package follows a small hexagonal layout. Trackers are the strategies,
+the orchestrator is the application service, and adapters isolate the only
+parts that touch the outside world (filesystem, `psutil`):
+
+```
+rebotarm_monitor/
+├── node.py             # ROS 2 adapter: params, publisher, timers
+├── orchestrator.py     # registers trackers + builds DiagnosticArray
+├── factories.py        # composition root: params dict → trackers
+├── parameters.py       # declare + load ROS parameters
+├── domain/             # HealthTracker contract + TrackerContext
+├── trackers/           # one file per concern (joint_states, per_joint,
+│                       # arm_status, gripper, can_bus, process)
+├── adapters/           # SysFsReader, ProcessInspector (real + fake)
+└── support/            # diagnostics helpers, rate window
+```
+
+Adding a new tracker = drop a file in `trackers/`, implement the
+`HealthTracker` ABC, and register it in `factories.build_trackers`.
+
+## Testing
+
+Unit tests live next to the package and use the in-memory adapter fakes
+(`FakeSysFsReader`, `FakeProcessInspector`) so no real CAN interface or
+process is needed.
+
+```bash
+colcon test --packages-select rebotarm_monitor
+colcon test-result --verbose
+```
+
+Or run pytest directly inside the package once the workspace is sourced:
+
+```bash
+cd src/rebotarm_monitor
+pytest
 ```
 
 ## Repository layout
@@ -96,11 +170,12 @@ rebotarm_monitor_ros2/
     └── rebotarm_monitor/        # ament_python package
         ├── config/
         ├── launch/
-        └── rebotarm_monitor/
+        ├── rebotarm_monitor/    # source
+        └── test/                # unit tests
 ```
 
 See [`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md) for the
-package-level reference (node name, diagnostic names, full parameter list).
+package-level reference (diagnostic names, full parameter list, examples).
 
 ## License
 

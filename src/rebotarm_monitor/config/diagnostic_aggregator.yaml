@@ -14,3 +14,11 @@
       type: diagnostic_aggregator/GenericAnalyzer
       path: Gripper
       startswith: ["rebotarm/gripper"]
+    bus:
+      type: diagnostic_aggregator/GenericAnalyzer
+      path: Bus
+      startswith: ["rebotarm/bus/"]
+    system:
+      type: diagnostic_aggregator/GenericAnalyzer
+      path: System
+      startswith: ["rebotarm/system/"]
