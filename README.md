@@ -55,6 +55,32 @@ ros2 run rqt_robot_monitor rqt_robot_monitor   # optional GUI
 The launch file starts the monitor node plus a `diagnostic_aggregator` so the
 output is ready to be visualised in `rqt_robot_monitor`.
 
+### Driver channel and link monitoring
+
+The Seeed driver connects over a **character device** (`channel` launch
+argument). The default in their `arm.yaml` is `/dev/ttyACM0` (USB serial).
+Some setups use a **udev symlink** (e.g. `/dev/ttyRebotB601`) or **SocketCAN**
+(`channel:=can0`) instead.
+
+The monitor does not read the driver's `channel` parameter. Configure the link
+layer explicitly so it matches how you launch the driver:
+
+| Driver transport | Driver launch | Monitor launch |
+|------------------|---------------|----------------|
+| USB serial (default) | `channel:=/dev/ttyACM0` | default (no extra args) |
+| USB serial + udev symlink | `channel:=/dev/ttyRebotB601` | `serial_device:=/dev/ttyRebotB601` |
+| SocketCAN | `channel:=can0` | `enable_serial_monitor:=false enable_can_monitor:=true` |
+
+Example with a custom symlink:
+
+```bash
+# Terminal 1 — driver
+ros2 launch rebotarm_bringup driver_only.launch.py channel:=/dev/ttyRebotB601
+
+# Terminal 2 — monitor (same device path)
+ros2 launch rebotarm_monitor monitor.launch.py serial_device:=/dev/ttyRebotB601
+```
+
 ## What it reports
 
 Each `DiagnosticStatus` in `/diagnostics` corresponds to one tracker. By
@@ -67,7 +93,8 @@ launch arguments listed below.
 | `rebotarm/joints/jointN` (N=1..6) | `/rebotarm/joints/jointN/state` | on |
 | `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` (latched) | on |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | on |
-| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | on (set `enable_can_monitor:=false` if you have no CAN) |
+| `rebotarm/link/serial` | host device node | on (default `/dev/ttyACM0`, Seeed standard) |
+| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | off (enable for SocketCAN setups) |
 | `rebotarm/system/driver` | `psutil` lookup of the driver process | on |
 
 Topics published:
@@ -101,7 +128,9 @@ The most-used parameters are exposed as launch arguments:
 | `max_abs_effort_nm` | `8.0` |
 | `status_log_period_s` | `1.0` |
 | `diagnostics_period_s` | `0.0` (means same as `status_log_period_s`) |
-| `enable_can_monitor` | `true` |
+| `enable_serial_monitor` | `true` |
+| `serial_device` | `/dev/ttyACM0` (same path as driver `channel:=`) |
+| `enable_can_monitor` | `false` (set `true` for SocketCAN) |
 | `can_interfaces` | `can0` (comma-separated list, e.g. `can0,can1`) |
 | `enable_process_monitor` | `true` |
 | `driver_process_pattern` | `reBotArmController` |
@@ -113,8 +142,17 @@ Example overrides:
 ```bash
 ros2 launch rebotarm_monitor monitor.launch.py \
   expected_rate_hz:=50.0 \
-  max_abs_effort_nm:=12.0 \
-  enable_can_monitor:=false
+  max_abs_effort_nm:=12.0
+
+# SocketCAN setup
+ros2 launch rebotarm_monitor monitor.launch.py \
+  enable_serial_monitor:=false \
+  enable_can_monitor:=true \
+  can_interfaces:=can0
+
+# USB serial with udev symlink (must match driver channel:=)
+ros2 launch rebotarm_monitor monitor.launch.py \
+  serial_device:=/dev/ttyRebotB601
 ```
 
 For the full list (per-joint thresholds, status-code mapping, etc.) edit
@@ -134,8 +172,8 @@ rebotarm_monitor/
 ├── parameters.py       # declare + load ROS parameters
 ├── domain/             # HealthTracker contract + TrackerContext
 ├── trackers/           # one file per concern (joint_states, per_joint,
-│                       # arm_status, gripper, can_bus, process)
-├── adapters/           # SysFsReader, ProcessInspector (real + fake)
+│                       # arm_status, gripper, serial_link, can_bus, process)
+├── adapters/           # SysFsReader, ProcessInspector, DevicePathInspector
 └── support/            # diagnostics helpers, rate window
 ```
 
@@ -145,8 +183,8 @@ Adding a new tracker = drop a file in `trackers/`, implement the
 ## Testing
 
 Unit tests live next to the package and use the in-memory adapter fakes
-(`FakeSysFsReader`, `FakeProcessInspector`) so no real CAN interface or
-process is needed.
+(`FakeSysFsReader`, `FakeProcessInspector`, `FakeDevicePathInspector`) so no
+real CAN interface, TTY device, or driver process is needed.
 
 ```bash
 colcon test --packages-select rebotarm_monitor

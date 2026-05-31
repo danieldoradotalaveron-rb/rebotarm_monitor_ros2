@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from .adapters.device_path import DevicePathInspector
 from .adapters.process_info import ProcessInspector
 from .adapters.sysfs import SysFsReader
 from .domain.tracker import HealthTracker
@@ -18,6 +19,7 @@ from .trackers.gripper import GripperTracker
 from .trackers.joint_states import JointStatesTracker
 from .trackers.per_joint import PerJointTracker
 from .trackers.process import ProcessHealthTracker
+from .trackers.serial_link import SerialLinkTracker
 
 
 def build_trackers(
@@ -25,6 +27,7 @@ def build_trackers(
     *,
     sysfs: Optional[SysFsReader] = None,
     process_inspector: Optional[ProcessInspector] = None,
+    device_inspector: Optional[DevicePathInspector] = None,
 ) -> list[HealthTracker]:
     """Build the ordered tracker list the orchestrator will own."""
     trackers: list[HealthTracker] = []
@@ -105,6 +108,16 @@ def build_trackers(
             if not iface:
                 continue
             trackers.append(CanBusTracker(iface, can_params, sysfs=sysfs))
+
+    if p["enable_serial_monitor"]:
+        device = str(p["serial_device"]).strip()
+        if device:
+            trackers.append(
+                SerialLinkTracker(
+                    {"device_path": device},
+                    inspector=device_inspector,
+                )
+            )
 
     if p["enable_process_monitor"]:
         trackers.append(

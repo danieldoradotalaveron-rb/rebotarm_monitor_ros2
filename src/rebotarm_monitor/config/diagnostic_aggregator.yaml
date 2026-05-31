@@ -22,3 +22,7 @@
       type: diagnostic_aggregator/GenericAnalyzer
       path: System
       startswith: ["rebotarm/system/"]
+    link:
+      type: diagnostic_aggregator/GenericAnalyzer
+      path: Link
+      startswith: ["rebotarm/link/"]

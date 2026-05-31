@@ -64,6 +64,7 @@ class MonitorNode(Node):
             f"arm_status={p['enable_arm_status_monitor']}, "
             f"gripper={p['enable_gripper_monitor']}, "
             f"can={p['enable_can_monitor']}:{p['can_interfaces']}, "
+            f"serial={p['enable_serial_monitor']}:'{p['serial_device']}', "
             f"process={p['enable_process_monitor']}:'{p['driver_process_pattern']}')"
         )
 

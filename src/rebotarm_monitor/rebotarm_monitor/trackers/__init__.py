@@ -6,6 +6,7 @@ from .gripper import GripperTracker
 from .joint_states import JointStatesTracker
 from .per_joint import PerJointTracker
 from .process import ProcessHealthTracker
+from .serial_link import SerialLinkTracker
 
 __all__ = [
     "ArmStatusTracker",
@@ -14,4 +15,5 @@ __all__ = [
     "JointStatesTracker",
     "PerJointTracker",
     "ProcessHealthTracker",
+    "SerialLinkTracker",
 ]

@@ -1,8 +1,9 @@
 # rebotarm_monitor
 
 `ament_python` package that subscribes to the reBot Arm B601-DM driver topics,
-polls a few host metrics (SocketCAN counters, driver process health) and
-publishes diagnostics in the standard `diagnostic_msgs` format.
+polls host-side link checks (serial TTY, optional SocketCAN counters, driver
+process health) and publishes diagnostics in the standard `diagnostic_msgs`
+format.
 
 ## Node
 
@@ -44,8 +45,24 @@ publishes diagnostics in the standard `diagnostic_msgs` format.
 | `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque, `status_code` |
 | `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
+| `rebotarm/link/serial` | host device node | path exists, character device, read/write permissions |
 | `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (delta per cycle) |
 | `rebotarm/system/driver` | `psutil` | resolution by name/PID, CPU%, RSS, threads, FDs, zombie/stopped state |
+
+## Link layer (serial vs CAN)
+
+The driver `channel` argument selects the transport. The monitor mirrors that
+choice with separate toggles — it does **not** parse the driver's parameters.
+
+| Transport | Driver | Monitor defaults |
+|-----------|--------|------------------|
+| USB serial | `channel:=/dev/ttyACM0` | `enable_serial_monitor:=true`, `serial_device:=/dev/ttyACM0` |
+| USB + udev symlink | `channel:=/dev/ttyRebotB601` | `serial_device:=/dev/ttyRebotB601` |
+| SocketCAN | `channel:=can0` | `enable_serial_monitor:=false`, `enable_can_monitor:=true` |
+
+Always pass the **same device path** to `serial_device` that you use for the
+driver's `channel:=` argument. The default `/dev/ttyACM0` matches Seeed's
+`arm.yaml`; custom udev symlinks are supported but never hardcoded.
 
 ## Parameters
 
@@ -74,7 +91,9 @@ Most-used parameters:
 | `arm_status_stale_timeout_s` | `1.0` |
 | `arm_status_warn_on_snapshot_age` | `false` |
 | `gripper_stale_timeout_s` | `1.0` |
-| `enable_can_monitor` | `true` |
+| `enable_serial_monitor` | `true` |
+| `serial_device` | `"/dev/ttyACM0"` |
+| `enable_can_monitor` | `false` |
 | `can_interfaces` | `"can0"` (comma-separated) |
 | `can_error_warn_per_period` | `1` |
 | `can_dropped_warn_per_period` | `10` |
@@ -93,8 +112,15 @@ ros2 launch rebotarm_monitor monitor.launch.py \
   expected_rate_hz:=50.0 \
   max_abs_effort_nm:=12.0
 
+# USB serial with udev symlink (match driver channel:=)
 ros2 launch rebotarm_monitor monitor.launch.py \
-  enable_can_monitor:=false   # host has no CAN
+  serial_device:=/dev/ttyRebotB601
+
+# SocketCAN
+ros2 launch rebotarm_monitor monitor.launch.py \
+  enable_serial_monitor:=false \
+  enable_can_monitor:=true \
+  can_interfaces:=can0
 
 ros2 launch rebotarm_monitor monitor.launch.py \
   use_diagnostic_aggregator:=false
@@ -110,7 +136,7 @@ rebotarm_monitor/
 ├── parameters.py       # declare + load ROS parameters
 ├── domain/             # HealthTracker ABC, TrackerContext
 ├── trackers/           # one strategy per concern
-├── adapters/           # SysFsReader + ProcessInspector (real & fake)
+├── adapters/           # SysFsReader, ProcessInspector, DevicePathInspector
 └── support/            # diagnostics helpers, rate window
 ```
 
@@ -125,5 +151,6 @@ colcon test --packages-select rebotarm_monitor
 colcon test-result --verbose
 ```
 
-Tests use `FakeSysFsReader` and `FakeProcessInspector` so they run without a
-real CAN device or driver process.
+Tests use `FakeSysFsReader`, `FakeProcessInspector`, and
+`FakeDevicePathInspector` so they run without a real CAN device, TTY, or
+driver process.

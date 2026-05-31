@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rebotarm_monitor.adapters import FakeProcessInspector, FakeSysFsReader
+from rebotarm_monitor.adapters import FakeDevicePathInspector, FakeProcessInspector, FakeSysFsReader
 from rebotarm_monitor.factories import build_trackers
 from rebotarm_monitor.trackers.arm_status import ArmStatusTracker
 from rebotarm_monitor.trackers.can_bus import CanBusTracker
@@ -10,6 +10,7 @@ from rebotarm_monitor.trackers.gripper import GripperTracker
 from rebotarm_monitor.trackers.joint_states import JointStatesTracker
 from rebotarm_monitor.trackers.per_joint import PerJointTracker
 from rebotarm_monitor.trackers.process import ProcessHealthTracker
+from rebotarm_monitor.trackers.serial_link import SerialLinkTracker
 
 
 def base_params(**overrides) -> dict:
@@ -53,6 +54,8 @@ def base_params(**overrides) -> dict:
         "can_warn_on_iface_down": True,
         "can_error_warn_per_period": 1,
         "can_dropped_warn_per_period": 10,
+        "enable_serial_monitor": True,
+        "serial_device": "/dev/ttyACM0",
         "driver_process_pattern": "reBotArmController",
         "driver_process_pid": 0,
         "driver_cpu_warn_percent": 90.0,
@@ -67,12 +70,25 @@ def base_params(**overrides) -> dict:
 
 
 def test_default_set_builds_one_per_concern():
-    trackers = build_trackers(base_params())
+    trackers = build_trackers(
+        base_params(enable_serial_monitor=False),
+        device_inspector=FakeDevicePathInspector(),
+    )
     kinds = [type(t) for t in trackers]
     assert kinds.count(JointStatesTracker) == 1
     assert kinds.count(PerJointTracker) == 2
     assert kinds.count(ArmStatusTracker) == 1
     assert kinds.count(GripperTracker) == 1
+
+
+def test_serial_link_added_when_enabled():
+    params = base_params(enable_serial_monitor=True, serial_device="/dev/ttyACM0")
+    trackers = build_trackers(
+        params,
+        device_inspector=FakeDevicePathInspector(exists={"/dev/ttyACM0"}),
+    )
+    kinds = [type(t) for t in trackers]
+    assert kinds.count(SerialLinkTracker) == 1
 
 
 def test_can_and_process_added_when_enabled():
@@ -93,6 +109,7 @@ def test_disabling_concerns_drops_trackers():
         enable_per_joint_monitor=False,
         enable_arm_status_monitor=False,
         enable_gripper_monitor=False,
+        enable_serial_monitor=False,
     )
     trackers = build_trackers(params)
     assert trackers == []

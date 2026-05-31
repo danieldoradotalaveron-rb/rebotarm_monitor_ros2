@@ -25,6 +25,8 @@ def generate_launch_description():
     use_diagnostic_aggregator = LaunchConfiguration("use_diagnostic_aggregator")
     enable_can_monitor = LaunchConfiguration("enable_can_monitor")
     can_interfaces = LaunchConfiguration("can_interfaces")
+    enable_serial_monitor = LaunchConfiguration("enable_serial_monitor")
+    serial_device = LaunchConfiguration("serial_device")
     enable_process_monitor = LaunchConfiguration("enable_process_monitor")
     driver_process_pattern = LaunchConfiguration("driver_process_pattern")
     driver_process_pid = LaunchConfiguration("driver_process_pid")
@@ -54,16 +56,32 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "enable_can_monitor",
-                default_value="true",
+                default_value="false",
                 description=(
-                    "Enable SocketCAN interface health checks. Set to false "
-                    "if the host has no CAN interfaces."
+                    "Enable SocketCAN interface health checks. Only useful when "
+                    "the driver uses channel:=can0 (not serial/USB)."
                 ),
             ),
             DeclareLaunchArgument(
                 "can_interfaces",
                 default_value="can0",
                 description="Comma-separated SocketCAN interfaces (e.g. can0,can1)",
+            ),
+            DeclareLaunchArgument(
+                "enable_serial_monitor",
+                default_value="true",
+                description=(
+                    "Check serial/USB device node presence. Default device "
+                    "matches Seeed arm.yaml (/dev/ttyACM0)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "serial_device",
+                default_value="/dev/ttyACM0",
+                description=(
+                    "Character device path; use the same value as the driver "
+                    "channel:= launch argument."
+                ),
             ),
             DeclareLaunchArgument(
                 "enable_process_monitor",
@@ -99,6 +117,8 @@ def generate_launch_description():
                         "diagnostics_period_s": diagnostics_period_s,
                         "enable_can_monitor": enable_can_monitor,
                         "can_interfaces": can_interfaces,
+                        "enable_serial_monitor": enable_serial_monitor,
+                        "serial_device": serial_device,
                         "enable_process_monitor": enable_process_monitor,
                         "driver_process_pattern": driver_process_pattern,
                         "driver_process_pid": driver_process_pid,
