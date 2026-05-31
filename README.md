@@ -55,6 +55,15 @@ ros2 run rqt_robot_monitor rqt_robot_monitor   # optional GUI
 The launch file starts the monitor node plus a `diagnostic_aggregator` so the
 output is ready to be visualised in `rqt_robot_monitor`.
 
+### Aggregator groups in rqt
+
+The launch loads one of two aggregator configs based on `enable_can_monitor`:
+
+| `enable_can_monitor` | rqt tree (`RebotArm/…`) |
+|----------------------|------------------------|
+| `false` (default — USB/serial) | Gripper, Hardware, Joints, Link, System |
+| `true` (SocketCAN) | Gripper, Hardware, Joints, Link, System, **Bus** |
+
 ### Driver channel and link monitoring
 
 The Seeed driver connects over a **character device** (`channel` launch
@@ -94,7 +103,7 @@ launch arguments listed below.
 | `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` (latched) | on |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | on |
 | `rebotarm/link/serial` | host device node | on (default `/dev/ttyACM0`, Seeed standard) |
-| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | off (enable for SocketCAN setups) |
+| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | off (only with `enable_can_monitor:=true`) |
 | `rebotarm/system/driver` | `psutil` lookup of the driver process | on |
 
 Topics published:

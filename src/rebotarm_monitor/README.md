@@ -14,7 +14,8 @@ format.
 | Default node name | `rebotarm_monitor` |
 | Launch file | `launch/monitor.launch.py` |
 | YAML defaults | `config/monitor.yaml` |
-| Aggregator analyzers | `config/diagnostic_aggregator.yaml` |
+| Aggregator analyzers (serial) | `config/diagnostic_aggregator.yaml` |
+| Aggregator analyzers (CAN) | `config/diagnostic_aggregator_can.yaml` |
 
 ## Subscribed topics
 
@@ -37,6 +38,13 @@ format.
 `diagnostic_aggregator`, launched together with the monitor when
 `use_diagnostic_aggregator:=true` (default).
 
+The launch picks one of two aggregator configs based on `enable_can_monitor`:
+
+| `enable_can_monitor` | Config file | rqt groups |
+|----------------------|-------------|------------|
+| `false` (default) | `diagnostic_aggregator.yaml` | Gripper, Hardware, Joints, Link, System |
+| `true` | `diagnostic_aggregator_can.yaml` | the above + Bus |
+
 ## Diagnostic names
 
 | Name | Source | Checks |
@@ -46,7 +54,7 @@ format.
 | `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
 | `rebotarm/link/serial` | host device node | path exists, character device, read/write permissions |
-| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (delta per cycle) |
+| `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (only when `enable_can_monitor:=true`) |
 | `rebotarm/system/driver` | `psutil` | resolution by name/PID, CPU%, RSS, threads, FDs, zombie/stopped state |
 
 ## Link layer (serial vs CAN)
