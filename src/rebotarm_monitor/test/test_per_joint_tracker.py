@@ -98,7 +98,26 @@ def test_high_torque_yields_warn():
     tracker.on_message(make_motor_state(torque=20.0))
     status = tracker.build_status(time.monotonic(), TrackerContext())
     assert status.level == DiagnosticStatus.WARN
-    assert "high torque |T|=20.0/8.0 Nm" in status.message
+    assert "high torque" in status.message
+    assert "|T|=20.0/8.0 Nm" in status.message
+    assert "|v|=0.0/10.0 rad/s" in status.message
+
+
+def test_payload_profile_keyvalue_defaults_to_light():
+    """No payload_profile in params falls back to the package default for visibility."""
+    tracker = make_tracker()
+    tracker.on_message(make_motor_state(status_code=1))
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert kv_map(status)["payload_profile"] == "light"
+
+
+def test_payload_profile_keyvalue_reflects_active_profile():
+    """When the orchestrator propagates a profile, the per-joint status surfaces it."""
+    params = dict(DEFAULT_PARAMS, payload_profile="rated")
+    tracker = PerJointTracker("j1", "/rebotarm/joints/j1/state", params)
+    tracker.on_message(make_motor_state(status_code=1))
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert kv_map(status)["payload_profile"] == "rated"
 
 
 def test_idle_torque_warning_triggers_in_normal_context():
@@ -106,7 +125,10 @@ def test_idle_torque_warning_triggers_in_normal_context():
     tracker.on_message(make_motor_state(velocity=0.0, torque=5.0))
     status = tracker.build_status(time.monotonic(), TrackerContext())
     assert status.level == DiagnosticStatus.WARN
-    assert "high torque while idle" in status.message
+    assert "high stationary effort" in status.message
+    assert "|T|=5.0/8.0 Nm" in status.message
+    assert "|v|=0.0/10.0 rad/s" in status.message
+    assert "idle threshold 5.0/3.0 Nm" in status.message
     assert tracker.last_warning_reason == "idle_torque"
     values = kv_map(status)
     assert values["control_context"] == "normal_or_unknown"
@@ -125,6 +147,7 @@ def test_idle_torque_suppressed_during_gravity_compensation():
         ),
     )
     assert status.level == DiagnosticStatus.OK
+    assert "high stationary effort" not in status.message
     assert "high torque while idle" not in status.message
     assert tracker.last_warning_reason != "idle_torque"
     values = kv_map(status)
@@ -144,13 +167,34 @@ def test_idle_torque_suppressed_during_position_hold():
         ),
     )
     assert status.level == DiagnosticStatus.OK
+    assert "high stationary effort" not in status.message
     assert "high torque while idle" not in status.message
     values = kv_map(status)
     assert values["control_context"] == "position_hold"
     assert values["load_state"] == "elevated"
     assert values["stationary_effort_check_suppressed"] == "True"
-    assert "|T|=5.0/3.0 Nm" in status.message
-    assert "(elevated stationary)" in status.message
+    assert "|T|=5.0/8.0 Nm" in status.message
+    assert "/3.0 Nm" not in status.message
+    assert "position hold" in status.message
+    assert "idle-torque warning suppressed at 3.0 Nm" in status.message
+
+
+def test_suppressed_message_uses_max_torque_in_gravity_compensation():
+    """OK suppressed branch must compare |T| to max_abs_joint_torque_nm, not idle threshold."""
+    tracker = make_tracker()
+    tracker.on_message(make_motor_state(velocity=0.0, torque=5.0))
+    status = tracker.build_status(
+        time.monotonic(),
+        hold_context(
+            gravity=True,
+            control_context="gravity_compensation",
+        ),
+    )
+    assert status.level == DiagnosticStatus.OK
+    assert "|T|=5.0/8.0 Nm" in status.message
+    assert "/3.0 Nm" not in status.message
+    assert "gravity compensation" in status.message
+    assert "idle-torque warning suppressed at 3.0 Nm" in status.message
 
 
 def test_absolute_high_torque_still_warns_during_gravity_compensation():
@@ -164,7 +208,9 @@ def test_absolute_high_torque_still_warns_during_gravity_compensation():
         ),
     )
     assert status.level == DiagnosticStatus.WARN
-    assert "high torque |T|=20.0/8.0 Nm" in status.message
+    assert "high torque" in status.message
+    assert "|T|=20.0/8.0 Nm" in status.message
+    assert "|v|=0.0/10.0 rad/s" in status.message
 
 
 def test_absolute_high_torque_still_warns_during_position_hold():
@@ -178,7 +224,9 @@ def test_absolute_high_torque_still_warns_during_position_hold():
         ),
     )
     assert status.level == DiagnosticStatus.WARN
-    assert "high torque |T|=20.0/8.0 Nm" in status.message
+    assert "high torque" in status.message
+    assert "|T|=20.0/8.0 Nm" in status.message
+    assert "|v|=0.0/10.0 rad/s" in status.message
 
 
 def test_torque_jump_yields_warn():
@@ -202,7 +250,7 @@ def test_idle_torque_uses_resolved_threshold_from_params():
     tracker.on_message(make_motor_state(velocity=0.0, torque=5.5))
     status = tracker.build_status(time.monotonic(), TrackerContext())
     assert status.level == DiagnosticStatus.WARN
-    assert "high torque while idle" in status.message
+    assert "high stationary effort" in status.message
 
 
 def test_non_finite_values_yield_error():
@@ -225,8 +273,83 @@ def test_stale_yields_error():
 def test_reset_period_clears_flags():
     tracker = make_tracker()
     tracker.on_message(make_motor_state(velocity=50.0, torque=20.0))
-    assert tracker.period_high_vel
-    assert tracker.period_high_torque
+    assert tracker.period_peak_abs_velocity_rad_s == 50.0
+    assert tracker.period_peak_abs_torque_nm == 20.0
     tracker.reset_period()
-    assert not tracker.period_high_vel
-    assert not tracker.period_high_torque
+    assert tracker.period_peak_abs_velocity_rad_s == 0.0
+    assert tracker.period_peak_abs_torque_nm == 0.0
+
+
+def test_period_torque_spike_does_not_warn_when_current_sample_recovered():
+    """Level follows last_msg, not a latched flag from an earlier sample."""
+    params = dict(DEFAULT_PARAMS)
+    params["max_abs_joint_torque_nm"] = 9.0
+    params["idle_torque_warn_nm"] = 8.0
+    tracker = PerJointTracker("joint2", "/rebotarm/joints/joint2/state", params)
+    tracker.on_message(make_motor_state(velocity=0.0, torque=10.0))
+    tracker.on_message(make_motor_state(velocity=0.0, torque=8.6))
+    status = tracker.build_status(
+        time.monotonic(),
+        hold_context(
+            gravity=True,
+            control_context="gravity_compensation",
+        ),
+    )
+    assert status.level == DiagnosticStatus.OK
+    assert "idle-torque warning suppressed" in status.message
+    assert "high torque" not in status.message
+    values = kv_map(status)
+    assert values["peak_abs_torque_nm_this_period"] == "10.000"
+
+
+def test_high_torque_during_gravity_comp_includes_context():
+    params = dict(DEFAULT_PARAMS)
+    params["max_abs_joint_torque_nm"] = 9.0
+    tracker = PerJointTracker("joint2", "/rebotarm/joints/joint2/state", params)
+    tracker.on_message(make_motor_state(velocity=0.0, torque=9.5))
+    status = tracker.build_status(
+        time.monotonic(),
+        hold_context(
+            gravity=True,
+            control_context="gravity_compensation",
+        ),
+    )
+    assert status.level == DiagnosticStatus.WARN
+    assert "high torque" in status.message
+    assert "gravity compensation" in status.message
+    assert "|v|=0.0/10.0 rad/s" in status.message
+    values = kv_map(status)
+    assert values["stationary_effort_check_suppressed"] == "True"
+    assert values["load_state"] == "elevated"
+
+
+def test_elevated_stationary_warns_when_gravity_comp_stops():
+    params = dict(DEFAULT_PARAMS)
+    params["max_abs_joint_torque_nm"] = 9.0
+    params["idle_torque_warn_nm"] = 8.0
+    tracker = PerJointTracker("joint2", "/rebotarm/joints/joint2/state", params)
+    tracker.on_message(make_motor_state(velocity=0.0, torque=8.6))
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert status.level == DiagnosticStatus.WARN
+    assert "high stationary effort" in status.message
+    values = kv_map(status)
+    assert values["stationary_effort_check_suppressed"] == "False"
+    assert values["control_context"] == "normal_or_unknown"
+
+
+def test_high_velocity_during_position_hold_includes_context():
+    params = dict(DEFAULT_PARAMS)
+    params["max_abs_joint_velocity_rad_s"] = 6.0
+    tracker = PerJointTracker("joint2", "/rebotarm/joints/joint2/state", params)
+    tracker.on_message(make_motor_state(velocity=7.0, torque=1.0))
+    status = tracker.build_status(
+        time.monotonic(),
+        hold_context(
+            position_hold=True,
+            control_context="position_hold",
+        ),
+    )
+    assert status.level == DiagnosticStatus.WARN
+    assert "high velocity" in status.message
+    assert "position hold" in status.message
+    assert "|T|=1.0/8.0 Nm" in status.message

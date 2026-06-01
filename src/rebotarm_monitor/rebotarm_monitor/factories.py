@@ -13,12 +13,13 @@ from .adapters.device_path import DevicePathInspector
 from .adapters.process_info import ProcessInspector
 from .adapters.sysfs import SysFsReader
 from .domain.tracker import HealthTracker
-from .parameters import resolve_joint_threshold
+from .parameters import profile_assumed_payload_kg, resolve_joint_threshold
 from .trackers.arm_status import ArmStatusTracker
 from .trackers.gravity_compensation import GravityCompensationTracker
 from .trackers.can_bus import CanBusTracker
 from .trackers.gripper import GripperTracker
 from .trackers.joint_states import JointStatesTracker
+from .trackers.monitor_config import MonitorConfigTracker
 from .trackers.per_joint import PerJointTracker
 from .trackers.process import ProcessHealthTracker
 from .trackers.serial_link import SerialLinkTracker
@@ -45,23 +46,34 @@ def build_trackers(
                     "max_position_jump_rad": p["max_position_jump_rad"],
                     "max_abs_velocity_rad_s": p["max_abs_velocity_rad_s"],
                     "max_abs_effort_nm": p["max_abs_effort_nm"],
+                    "per_joint_max_abs_velocity_rad_s": p.get(
+                        "per_joint_max_abs_velocity_rad_s", {}
+                    ),
+                    "per_joint_max_abs_torque_nm": p.get(
+                        "per_joint_max_abs_torque_nm", {}
+                    ),
                 },
             )
         )
 
     if p["enable_per_joint_monitor"]:
+        # ``payload_profile`` propagates as informational metadata so the
+        # per-joint diagnostic surfaces the active profile in rqt KeyValues.
+        # Defaults to the package default when callers (mostly unit tests)
+        # omit it.
         pj_base = {
             "per_joint_stale_timeout_s": p["per_joint_stale_timeout_s"],
-            "max_abs_joint_velocity_rad_s": p["max_abs_joint_velocity_rad_s"],
             "idle_velocity_threshold_rad_s": p["idle_velocity_threshold_rad_s"],
             "max_joint_position_jump_rad": p["max_joint_position_jump_rad"],
             "max_joint_torque_jump_nm": p["max_joint_torque_jump_nm"],
             "expected_enabled_status_code": p["expected_enabled_status_code"],
             "allow_disabled_status_code": p["allow_disabled_status_code"],
             "disabled_status_code": p["disabled_status_code"],
+            "payload_profile": p.get("payload_profile", "light"),
         }
         max_torque_overrides = p["per_joint_max_abs_torque_nm"]
         idle_torque_overrides = p["per_joint_idle_torque_warn_nm"]
+        max_velocity_overrides = p["per_joint_max_abs_velocity_rad_s"]
         prefix = p["joint_state_topic_prefix"].rstrip("/")
         for name in p["joint_names"]:
             trackers.append(
@@ -79,6 +91,11 @@ def build_trackers(
                             name,
                             p["idle_torque_warn_nm"],
                             idle_torque_overrides,
+                        ),
+                        "max_abs_joint_velocity_rad_s": resolve_joint_threshold(
+                            name,
+                            p["max_abs_joint_velocity_rad_s"],
+                            max_velocity_overrides,
                         ),
                     },
                 )
@@ -149,5 +166,15 @@ def build_trackers(
                 inspector=process_inspector,
             )
         )
+
+    profile = p.get("payload_profile", "light")
+    trackers.append(
+        MonitorConfigTracker(
+            {
+                "payload_profile": profile,
+                "assumed_payload_kg": profile_assumed_payload_kg(profile),
+            }
+        )
+    )
 
     return trackers

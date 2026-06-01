@@ -45,6 +45,10 @@ The launch picks one of two aggregator configs based on `enable_can_monitor`:
 | `false` (default) | `diagnostic_aggregator.yaml` | Control, Gripper, Hardware, Joints, Link, System |
 | `true` | `diagnostic_aggregator_can.yaml` | the above + Bus |
 
+In `rqt_robot_monitor`, expand **RebotArm → System** for
+`rebotarm/system/monitor_config` (active `payload_profile` in the Message
+column) and `rebotarm/system/driver`.
+
 ## Diagnostic names
 
 | Name | Source | Checks |
@@ -52,16 +56,17 @@ The launch picks one of two aggregator configs based on `enable_can_monitor`:
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | rate, stale timeout, finite values, value jumps, high velocity, high effort |
 | `rebotarm/control/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
 | `rebotarm/control/gravity_compensation` | `/rebotarm/arm_status` | `gravity_compensation_active` when `state_machine == GRAVITY_COMP` (not inferred from `mode`); `state_machine`, `mode`, `enabled`, `control_loop_active` |
-| `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque (suppressed when `state_machine == GRAVITY_COMP`), `status_code` |
+| `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, stationary idle torque (suppressed during gravity compensation or position hold), `status_code` |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
 | `rebotarm/link/serial` | host device node | path exists, character device, read/write permissions |
 | `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (only when `enable_can_monitor:=true`) |
+| `rebotarm/system/monitor_config` | node parameters | active `payload_profile` and assumed payload mass |
 | `rebotarm/system/driver` | `psutil` | resolution by name/PID, CPU%, RSS, threads, FDs, zombie/stopped state |
 
 ## Link layer (serial vs CAN)
 
 The driver `channel` argument selects the transport. The monitor mirrors that
-choice with separate toggles — it does **not** parse the driver's parameters.
+choice with separate toggles; it does not parse the driver's parameters.
 
 | Transport | Driver | Monitor defaults |
 |-----------|--------|------------------|
@@ -69,19 +74,22 @@ choice with separate toggles — it does **not** parse the driver's parameters.
 | USB + udev symlink | `channel:=/dev/ttyRebotB601` | `serial_device:=/dev/ttyRebotB601` |
 | SocketCAN | `channel:=can0` | `enable_serial_monitor:=false`, `enable_can_monitor:=true` |
 
-Always pass the **same device path** to `serial_device` that you use for the
-driver's `channel:=` argument. The default `/dev/ttyACM0` matches Seeed's
-`arm.yaml`; custom udev symlinks are supported but never hardcoded.
+Set `serial_device` to the same path used for the driver's `channel:=`
+argument. The default `/dev/ttyACM0` matches Seeed's `arm.yaml`.
 
 ## Parameters
 
-ROS 2 parameter resolution order (lowest → highest):
+ROS 2 scalar parameters resolve in this order (lowest → highest precedence):
 
-1. Defaults declared in `rebotarm_monitor/parameters.py` (scalars/lists).
-   B601 per-joint max-torque map is injected in `load_params()` (not a ROS param).
-2. `config/monitor.yaml` loaded by the launch file (scalars and lists only).
-3. The `LaunchConfiguration` dict in `monitor.launch.py`.
-4. CLI overrides on `ros2 launch ... key:=value` (scalars exposed in launch).
+1. Defaults in `rebotarm_monitor/parameters.py` (`_PARAM_SPECS`).
+2. `config/monitor.yaml` (loaded by the launch file).
+3. The inline parameter dict in `monitor.launch.py`.
+4. CLI overrides on `ros2 launch ... key:=value`.
+
+After scalars are resolved, `load_params()` injects the B601 per-joint
+threshold maps from the resolved `payload_profile`. Those maps are Python
+constants, not ROS parameters (`rclpy` rejects `dict` types), so they
+cannot be overridden from YAML or the launch file.
 
 `config/monitor.yaml` uses the wildcard `/**:` block so it applies regardless
 of the node name you launch with.
@@ -97,10 +105,12 @@ Most-used parameters:
 | `max_abs_velocity_rad_s` | `10.0` |
 | `max_abs_effort_nm` | `8.0` |
 | `idle_velocity_threshold_rad_s` | `0.05` |
-| `idle_torque_warn_nm` | `3.0` (global fallback for per-joint idle torque WARN) |
-| `max_abs_joint_torque_nm` | `8.0` (global fallback for per-joint high torque WARN) |
-| `per_joint_idle_torque_warn_nm` | `{}` via `load_params()` (not a ROS parameter) |
-| `per_joint_max_abs_torque_nm` | B601 map via `load_params()` (joint1–3: 9.0, joint4–6: 3.0 Nm) |
+| `idle_torque_warn_nm` | `3.0` (global fallback for joints not in the B601 per-joint map) |
+| `max_abs_joint_torque_nm` | `8.0` (global fallback for joints not in the B601 per-joint map) |
+| `payload_profile` | `"light"` (selects per-joint torque maps; see "Payload profiles") |
+| `per_joint_idle_torque_warn_nm` | B601 map via `load_params()`, varies by profile |
+| `per_joint_max_abs_torque_nm` | B601 map via `load_params()`, varies by profile |
+| `per_joint_max_abs_velocity_rad_s` | B601 map via `load_params()` (profile-independent, joint1–3: 6.0, joint4–6: 20.0 rad/s) |
 | `arm_status_stale_timeout_s` | `1.0` |
 | `arm_status_warn_on_snapshot_age` | `false` |
 | `gripper_stale_timeout_s` | `1.0` |
@@ -116,7 +126,7 @@ Most-used parameters:
 | `driver_rss_warn_mb` | `1024.0` |
 | `driver_threads_warn` | `64` |
 | `status_log_period_s` | `1.0` |
-| `diagnostics_period_s` | `1.0` |
+| `diagnostics_period_s` | `1.0` via `monitor.yaml`; launch default `0.0` (= same as `status_log_period_s`) |
 
 ### Per-joint torque behavior
 
@@ -128,25 +138,44 @@ Most-used parameters:
 - `position_hold_active` — `True` when `mode == pos_vel`, `enabled`, and `control_loop_active`.
 - `control_context` — `gravity_compensation`, `position_hold`, or `normal_or_unknown`.
 
-`PerJointTracker` uses the context as follows:
+`PerJointTracker` uses the context as follows. Torque and velocity
+levels are derived from the latest sample (`last_msg`), not latched
+across the diagnostic period, so the message always matches what the joint
+is doing now. Position/torque jumps still latch within the period. Peak
+|T| and |v| seen during the period are exposed as KeyValues.
 
-| Check | `normal_or_unknown` | `GRAVITY_COMP` or `position_hold` |
-|-------|---------------------|-----------------------------------|
-| Stationary effort (\|vel\| low, \|torque\| > `idle_torque_warn_nm`) | WARN `high torque while idle` | **OK** + KV (`load_state=elevated`, `stationary_effort_check_suppressed=true`) |
-| `high torque` (absolute) | WARN if \|torque\| > resolved `max_abs_joint_torque_nm` | **Still WARN** |
+| Check | `normal_or_unknown` | `gravity_compensation` or `position_hold` |
+|-------|---------------------|-------------------------------------------|
+| Stationary effort (\|vel\| below `idle_velocity_threshold_rad_s`, \|torque\| above `idle_torque_warn_nm`, at or below max torque) | WARN (`high stationary effort`, includes \|T\| and \|v\|) | OK with KeyValues (`load_state=elevated`, `stationary_effort_check_suppressed=true`) |
+| Absolute high torque (\|torque\| above `max_abs_joint_torque_nm`) | WARN (includes \|T\| and \|v\|) | WARN (includes \|T\|, \|v\|, and holding context) |
+| Absolute high velocity (\|velocity\| above `max_abs_joint_velocity_rad_s`) | WARN (includes \|T\| and \|v\|) | WARN (includes \|T\|, \|v\|, and holding context) |
 
 Do not infer gravity compensation from `mode == "mit"`.
 
-**B601-DM shipped defaults (`parameters.py`):** `_B601_PER_JOINT_MAX_ABS_TORQUE_NM`
-sets 9.0 Nm on joint1–3 and 3.0 Nm on joint4–6; idle map stays `{}` (global
-3.0 Nm). These are not ROS parameters — edit the constant and rebuild.
+### Payload profiles
 
-Per-joint `message` lines show live **|T|** and **|v|** vs resolved limits
-(e.g. `joint3 |T|=4.2/9.0 Nm |v|=0.0/10.0 rad/s`). WARN lines include the
-failing quantity (`high torque |T|=9.5/9.0 Nm`). Limits come from the tracker
-`params` dict via `PerJointLimitsView` (factory + `resolve_joint_threshold`);
-future robot profiles only change that wiring. KeyValues also expose
-`torque_vs_max_nm`, `torque_vs_idle_nm`, `velocity_vs_max_rad_s`.
+Per-joint torque thresholds depend on the expected gripper payload. The
+`payload_profile` parameter selects one of three profiles at node startup
+(default `light`):
+
+| Profile | Assumed payload | Idle j1/j2/j3/j4/j5/j6 (Nm) | Max j1–3 / j4–6 (Nm) |
+|---------|-----------------|------------------------------|----------------------|
+| `light` (default) | 0.5 kg | 1 / 8 / 8 / 2.5 / 1.5 / 1 | 9 / 3 |
+| `medium` | 1.0 kg | 1 / 10 / 10 / 3 / 2 / 1 | 12 / 4 |
+| `rated` | 1.5 kg | 1 / 14 / 12 / 4 / 2.5 / 1 | 18 / 5.5 |
+
+Per-joint velocity limits are profile-independent (joint1–3: 6.0 rad/s,
+joint4–6: 20.0 rad/s). The active profile appears in **System →
+monitor_config** and as a `payload_profile` KeyValue on each per-joint
+diagnostic. An unknown profile name prevents the node from starting.
+Restart the monitor to change profile.
+
+Derivation notes and operational edge cases:
+[`docs/per-joint-thresholds.md`](../../docs/per-joint-thresholds.md).
+
+Per-joint `message` lines always show live |T| and |v| against the resolved
+limits. WARN lines keep both measurements and name the failing check (for
+example, `joint3 high torque |T|=9.5/9.0 Nm |v|=0.0/6.0 rad/s`).
 
 ## Example overrides
 
@@ -154,6 +183,10 @@ future robot profiles only change that wiring. KeyValues also expose
 ros2 launch rebotarm_monitor monitor.launch.py \
   expected_rate_hz:=50.0 \
   max_abs_effort_nm:=12.0
+
+# Switch payload profile (light / medium / rated)
+ros2 launch rebotarm_monitor monitor.launch.py \
+  payload_profile:=medium
 
 # USB serial with udev symlink (match driver channel:=)
 ros2 launch rebotarm_monitor monitor.launch.py \
@@ -184,9 +217,9 @@ rebotarm_monitor/
 ```
 
 Trackers depend only on `domain/` and `adapters/`; the orchestrator reads
-`ArmStatusTracker` once per cycle to populate `TrackerContext` for siblings (e.g.
-per-joint idle-torque suppression during gravity compensation). The node only
-touches `parameters.py`, `factories.py`, and the orchestrator. Logic stays
+`ArmStatusTracker` once per cycle to populate `TrackerContext` for sibling
+trackers (including per-joint stationary-effort suppression). The node only
+touches `parameters.py`, `factories.py`, and the orchestrator. Core logic is
 testable without rclpy.
 
 ## Tests

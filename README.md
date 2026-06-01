@@ -81,13 +81,22 @@ The launch loads one of two aggregator configs based on `enable_can_monitor`:
 | `enable_can_monitor` | rqt tree (`RebotArm/…`) |
 |----------------------|------------------------|
 | `false` (default — USB/serial) | Control, Gripper, Hardware, Joints, Link, System |
-| `true` (SocketCAN) | Control, Gripper, Hardware, Joints, Link, System, **Bus** |
+| `true` (SocketCAN) | Control, Gripper, Hardware, Joints, Link, System, Bus |
+
+Expand **System** to see the active payload profile:
+
+- `rebotarm/system/monitor_config` — message like
+  `payload profile: light (0.5 kg assumed payload)` (always published).
+- `rebotarm/system/driver` — driver process health.
+
+One profile is active per monitor process (`payload_profile` launch argument,
+default `light`). Changing profile requires restarting the monitor node.
 
 ### Driver channel and link monitoring
 
-The Seeed driver connects over a **character device** (`channel` launch
+The Seeed driver connects over a character device (`channel` launch
 argument). The default in their `arm.yaml` is `/dev/ttyACM0` (USB serial).
-Some setups use a **udev symlink** (e.g. `/dev/ttyRebotB601`) or **SocketCAN**
+Some setups use a udev symlink (for example `/dev/ttyRebotB601`) or SocketCAN
 (`channel:=can0`) instead.
 
 The monitor does not read the driver's `channel` parameter. Configure the link
@@ -111,9 +120,8 @@ ros2 launch rebotarm_monitor monitor.launch.py serial_device:=/dev/ttyRebotB601
 
 ## What it reports
 
-Each `DiagnosticStatus` in `/diagnostics` corresponds to one tracker. By
-default every tracker is enabled; turn off the ones you don't need via the
-launch arguments listed below.
+Each `DiagnosticStatus` in `/diagnostics` corresponds to one tracker. Trackers
+can be disabled individually via ROS parameters or launch arguments.
 
 | Diagnostic name | Source | Default |
 |-----------------|--------|---------|
@@ -124,6 +132,7 @@ launch arguments listed below.
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | on |
 | `rebotarm/link/serial` | host device node | on (default `/dev/ttyACM0`, Seeed standard) |
 | `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | off (only with `enable_can_monitor:=true`) |
+| `rebotarm/system/monitor_config` | node parameters | on (shows active `payload_profile`) |
 | `rebotarm/system/driver` | `psutil` lookup of the driver process | on |
 
 Topics published:
@@ -136,16 +145,22 @@ Topics published:
 
 ## Configuration
 
-Launch arguments below cover the common cases. For the full parameter table and
-diagnostic reference, see
+Launch arguments below cover common overrides. The full parameter table and
+diagnostic reference are in
 [`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md).
+Threshold derivation and semantics for the B601 per-joint maps are in
+[`docs/per-joint-thresholds.md`](docs/per-joint-thresholds.md).
 
-ROS 2 parameters resolve in this order (lowest → highest precedence):
+Scalar ROS parameters resolve in this order (lowest → highest precedence):
 
-1. Defaults declared in `rebotarm_monitor/parameters.py` (scalars/lists).
-2. B601 per-joint max-torque map applied in `load_params()` (not a ROS param).
-3. YAML from the launch file (`config/monitor.yaml`).
-4. `LaunchConfiguration` + CLI overrides for launch-exposed scalars.
+1. Defaults in `rebotarm_monitor/parameters.py` (`_PARAM_SPECS`).
+2. `config/monitor.yaml`.
+3. The inline parameter dict in `monitor.launch.py`.
+4. CLI overrides on `ros2 launch ... key:=value`.
+
+B601 per-joint threshold maps are injected by `load_params()` from the
+resolved `payload_profile`. They are not ROS parameters and cannot be set
+from YAML or the launch file.
 
 The most-used parameters are exposed as launch arguments:
 
@@ -168,6 +183,7 @@ The most-used parameters are exposed as launch arguments:
 | `driver_process_pattern` | `reBotArmController` |
 | `driver_process_pid` | `0` (auto-discover by pattern) |
 | `use_diagnostic_aggregator` | `true` |
+| `payload_profile` | `light` (0.5 kg assumed payload). Also: `medium` (1.0 kg), `rated` (1.5 kg) |
 
 Example overrides:
 
@@ -175,6 +191,9 @@ Example overrides:
 ros2 launch rebotarm_monitor monitor.launch.py \
   expected_rate_hz:=50.0 \
   max_abs_effort_nm:=12.0
+
+# Pick payload profile (light / medium / rated)
+ros2 launch rebotarm_monitor monitor.launch.py payload_profile:=rated
 
 # SocketCAN setup
 ros2 launch rebotarm_monitor monitor.launch.py \
@@ -187,37 +206,11 @@ ros2 launch rebotarm_monitor monitor.launch.py \
   serial_device:=/dev/ttyRebotB601
 ```
 
-Scalar tuning (rates, stale timeouts, serial device, globals such as
-`idle_torque_warn_nm` / `max_abs_joint_torque_nm`) lives in `config/monitor.yaml`.
-Per-joint **maps** (`per_joint_max_abs_torque_nm`, `per_joint_idle_torque_warn_nm`)
-are **not** ROS parameters (rclpy rejects dict types). B601 defaults live in
-`parameters.py` (`_B601_PER_JOINT_MAX_ABS_TORQUE_NM`); edit that constant to tune.
-
-### Per-joint torque (B601-DM)
-
-Global fallbacks (in `monitor.yaml` and `parameters.py`):
-
-- `idle_torque_warn_nm: 3.0` — WARN `high torque while idle` when velocity is
-  near zero and \|torque\| exceeds this value.
-- `max_abs_joint_torque_nm: 8.0` — WARN `high torque` when \|torque\| exceeds this
-  value (absolute limit).
-
-**Gravity compensation:** when `arm_status.state_machine == GRAVITY_COMP`, the
-per-joint tracker **does not** emit `high torque while idle` (support torque is
-expected). Detection uses `state_machine` only, not `mode == "mit"`. Absolute
-`high torque` warnings still apply.
-
-**Motor families (shipped defaults):** joints 1–3 use larger 4340P-class motors;
-joints 4–6 use smaller 4310-class motors. `per_joint_max_abs_torque_nm` overrides
-are defined in `parameters.py` (`joint1`–`3`: 9.0 Nm, `joint4`–`6`: 3.0 Nm), not
-in `monitor.yaml` — `rclpy.declare_parameter` only accepts scalars and arrays;
-dict parameters raise `TypeError`.
-
-`per_joint_idle_torque_warn_nm` stays empty (global 3.0 Nm for all joints).
-
-Keys must match `joint_names`. Missing keys use the global fallback. See
-[`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md) for the full
-parameter table.
+Scalar parameters such as rates, stale timeouts, and the serial device path
+can be tuned in `config/monitor.yaml`. B601 per-joint threshold maps are
+defined in `parameters.py` and selected by `payload_profile`; see
+[`docs/per-joint-thresholds.md`](docs/per-joint-thresholds.md) for values
+and derivation.
 
 ## Architecture
 
@@ -234,13 +227,13 @@ rebotarm_monitor/
 ├── domain/             # HealthTracker contract + TrackerContext
 ├── trackers/           # one file per concern (joint_states, per_joint,
 │                       # arm_status, gravity_compensation, gripper,
-│                       # serial_link, can_bus, process)
+│                       # serial_link, can_bus, process, monitor_config)
 ├── adapters/           # SysFsReader, ProcessInspector, DevicePathInspector
 └── support/            # diagnostics helpers, rate window
 ```
 
-Adding a new tracker = drop a file in `trackers/`, implement the
-`HealthTracker` ABC, and register it in `factories.build_trackers`.
+To add a tracker, implement `HealthTracker` in `trackers/` and register it
+in `factories.build_trackers`.
 
 ## Testing
 
@@ -265,7 +258,8 @@ pytest
 ```
 rebotarm_monitor_ros2/
 ├── docs/
-│   └── hero.png
+│   ├── hero.png
+│   └── per-joint-thresholds.md
 └── src/
     └── rebotarm_monitor/        # ament_python package
         ├── config/

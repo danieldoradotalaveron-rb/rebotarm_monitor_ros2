@@ -37,6 +37,7 @@ def generate_launch_description():
     enable_process_monitor = LaunchConfiguration("enable_process_monitor")
     driver_process_pattern = LaunchConfiguration("driver_process_pattern")
     driver_process_pid = LaunchConfiguration("driver_process_pid")
+    payload_profile = LaunchConfiguration("payload_profile")
 
     return LaunchDescription(
         [
@@ -105,6 +106,15 @@ def generate_launch_description():
                 default_value="0",
                 description="Force PID; 0 means auto-discover by pattern",
             ),
+            DeclareLaunchArgument(
+                "payload_profile",
+                default_value="light",
+                description=(
+                    "B601 per-joint torque thresholds: 'light' (0.5 kg, "
+                    "default), 'medium' (1.0 kg), 'rated' (1.5 kg). See "
+                    "docs/per-joint-thresholds.md."
+                ),
+            ),
             Node(
                 package="rebotarm_monitor",
                 executable="monitor",
@@ -129,6 +139,7 @@ def generate_launch_description():
                         "enable_process_monitor": enable_process_monitor,
                         "driver_process_pattern": driver_process_pattern,
                         "driver_process_pid": driver_process_pid,
+                        "payload_profile": payload_profile,
                     },
                 ],
             ),

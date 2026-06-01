@@ -123,6 +123,37 @@ def test_high_effort_multiple_joints_generic_message():
     assert values["joint3_effort_nm"] == "10.000"
 
 
+def test_high_effort_uses_per_joint_limit_not_global():
+    """Effort above global (8.0) but below per-joint max (9.0) must stay OK."""
+    params = dict(DEFAULT_PARAMS)
+    params["per_joint_max_abs_torque_nm"] = {"joint2": 9.0}
+    tracker = JointStatesTracker("/rebotarm/joint_states", params)
+    tracker.on_message(
+        make_joint_state(["joint2"], [0.0], [0.0], [8.6])
+    )
+    tracker.rate.msg_count = 60
+    tracker.rate.window_start = time.monotonic() - 1.0
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert status.level == DiagnosticStatus.OK
+    assert status.message == "joint_states healthy"
+
+
+def test_high_effort_warns_when_above_per_joint_limit():
+    params = dict(DEFAULT_PARAMS)
+    params["per_joint_max_abs_torque_nm"] = {"joint2": 9.0}
+    tracker = JointStatesTracker("/rebotarm/joint_states", params)
+    tracker.on_message(
+        make_joint_state(["joint2"], [0.0], [0.0], [9.5])
+    )
+    tracker.rate.msg_count = 60
+    tracker.rate.window_start = time.monotonic() - 1.0
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert status.level == DiagnosticStatus.WARN
+    assert status.message == "some joints in abnormal state (1 joints)"
+    values = {entry.key: entry.value for entry in status.values}
+    assert values["abnormal_joint_names"] == "joint2"
+
+
 def test_missing_velocity_array_yields_warn():
     tracker = make_tracker()
     tracker.on_message(make_joint_state(["j1"], [0.0], [], [0.0]))

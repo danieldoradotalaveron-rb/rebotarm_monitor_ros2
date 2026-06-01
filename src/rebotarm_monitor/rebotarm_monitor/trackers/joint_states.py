@@ -10,6 +10,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 
 from ..domain.tracker import HealthTracker, SubscriptionRegistrar, TrackerContext
+from ..parameters import resolve_joint_threshold
 from ..support.diagnostics import is_finite, kv
 from ..support.rate_window import RateWindow
 
@@ -67,7 +68,21 @@ class JointStatesTracker(HealthTracker):
         if not self.has_effort:
             self.period_missing_effort = True
 
+        max_vel_overrides = self.params.get("per_joint_max_abs_velocity_rad_s", {})
+        max_effort_overrides = self.params.get("per_joint_max_abs_torque_nm", {})
+
         for i, name in enumerate(names):
+            max_vel = resolve_joint_threshold(
+                name,
+                self.params["max_abs_velocity_rad_s"],
+                max_vel_overrides,
+            )
+            max_effort = resolve_joint_threshold(
+                name,
+                self.params["max_abs_effort_nm"],
+                max_effort_overrides,
+            )
+
             if self.has_pos:
                 pos = float(msg.position[i])
                 if not is_finite(pos):
@@ -85,7 +100,7 @@ class JointStatesTracker(HealthTracker):
                 self.max_abs_vel_observed = max(self.max_abs_vel_observed, abs(vel))
                 if not is_finite(vel):
                     self.period_non_finite_vel = True
-                elif abs(vel) > self.params["max_abs_velocity_rad_s"]:
+                elif abs(vel) > max_vel:
                     self.period_high_vel[name] = vel
 
             if self.has_effort:
@@ -95,7 +110,7 @@ class JointStatesTracker(HealthTracker):
                 )
                 if not is_finite(effort):
                     self.period_non_finite_effort = True
-                elif abs(effort) > self.params["max_abs_effort_nm"]:
+                elif abs(effort) > max_effort:
                     self.period_high_effort[name] = effort
 
     def reset_period(self) -> None:

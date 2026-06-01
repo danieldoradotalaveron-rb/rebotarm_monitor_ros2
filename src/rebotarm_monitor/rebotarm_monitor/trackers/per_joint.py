@@ -29,10 +29,9 @@ class PerJointTracker(HealthTracker):
         self.prev_torque: Optional[float] = None
         self.period_position_jump: Optional[float] = None
         self.period_torque_jump: Optional[float] = None
-        self.period_high_vel = False
-        self.period_high_torque = False
-        self.period_idle_torque = False
         self.period_non_finite = False
+        self.period_peak_abs_torque_nm = 0.0
+        self.period_peak_abs_velocity_rad_s = 0.0
         self.last_warning_reason = ""
 
     @property
@@ -71,27 +70,44 @@ class PerJointTracker(HealthTracker):
         if is_finite(torque):
             self.prev_torque = torque
 
-        if is_finite(vel) and abs(vel) > self._limits.max_abs_velocity_rad_s:
-            self.period_high_vel = True
+        if is_finite(vel):
+            self.period_peak_abs_velocity_rad_s = max(
+                self.period_peak_abs_velocity_rad_s, abs(vel)
+            )
 
-        if is_finite(torque) and abs(torque) > self._limits.max_abs_torque_nm:
-            self.period_high_torque = True
-
-        if (
-            is_finite(vel)
-            and is_finite(torque)
-            and abs(vel) < self._limits.idle_velocity_threshold_rad_s
-            and abs(torque) > self._limits.idle_torque_warn_nm
-        ):
-            self.period_idle_torque = True
+        if is_finite(torque):
+            self.period_peak_abs_torque_nm = max(
+                self.period_peak_abs_torque_nm, abs(torque)
+            )
 
     def reset_period(self) -> None:
         self.period_position_jump = None
         self.period_torque_jump = None
-        self.period_high_vel = False
-        self.period_high_torque = False
-        self.period_idle_torque = False
         self.period_non_finite = False
+        self.period_peak_abs_torque_nm = 0.0
+        self.period_peak_abs_velocity_rad_s = 0.0
+
+    def _live_motion_flags(
+        self, msg: JointMotorState
+    ) -> tuple[bool, bool, bool]:
+        """Classify the *current* sample (not latched across the period).
+
+        Returns ``(exceeds_max_torque, exceeds_max_velocity, elevated_stationary)``.
+        """
+        torque = float(msg.torque)
+        velocity = float(msg.velocity)
+        if not (is_finite(torque) and is_finite(velocity)):
+            return False, False, False
+
+        abs_torque = abs(torque)
+        abs_velocity = abs(velocity)
+        exceeds_max_torque = abs_torque > self._limits.max_abs_torque_nm
+        exceeds_max_velocity = abs_velocity > self._limits.max_abs_velocity_rad_s
+        elevated_stationary = (
+            abs_velocity < self._limits.idle_velocity_threshold_rad_s
+            and abs_torque > self._limits.idle_torque_warn_nm
+        )
+        return exceeds_max_torque, exceeds_max_velocity, elevated_stationary
 
     def _status_code_level(
         self,
@@ -129,6 +145,10 @@ class PerJointTracker(HealthTracker):
 
     def _measurement_suffix(self, msg: JointMotorState) -> str:
         """Live |T| and |v| vs resolved limits (shown in rqt message when healthy)."""
+        return self._live_measurements(msg)
+
+    def _live_measurements(self, msg: JointMotorState) -> str:
+        """Always show torque and velocity against their active warning limits."""
         torque = float(msg.torque)
         velocity = float(msg.velocity)
         return (
@@ -136,15 +156,53 @@ class PerJointTracker(HealthTracker):
             f"|v|={self._velocity_vs_max(velocity)}"
         )
 
-    def _healthy_message(self, msg: JointMotorState, *, elevated: bool = False) -> str:
+    def _warn_message(
+        self,
+        msg: JointMotorState,
+        reason: str,
+        *,
+        detail: str = "",
+    ) -> str:
+        """WARN line: joint name, reason, live |T|/|v|, optional detail suffix."""
+        parts = [self.joint_name, reason, self._live_measurements(msg)]
+        if detail:
+            parts.append(detail)
+        return " ".join(parts)
+
+    @staticmethod
+    def _suppression_label(context: TrackerContext) -> str:
+        if context.gravity_compensation_active:
+            return "gravity compensation"
+        if context.position_hold_active:
+            return "position hold"
+        return "holding"
+
+    def _context_clause(self, context: TrackerContext) -> str:
+        """Short parenthetical explaining the active holding context."""
+        label = self._suppression_label(context)
+        if label == "holding":
+            return ""
+        return f"({label})"
+
+    def _healthy_message(
+        self,
+        msg: JointMotorState,
+        *,
+        elevated: bool = False,
+        context: Optional[TrackerContext] = None,
+    ) -> str:
         torque = float(msg.torque)
         velocity = float(msg.velocity)
         if elevated:
+            label = (
+                self._suppression_label(context) if context is not None else "holding"
+            )
             return (
                 f"{self.joint_name} "
-                f"|T|={self._torque_vs_idle(torque)} "
+                f"|T|={self._torque_vs_max(torque)} "
                 f"|v|={self._velocity_vs_max(velocity)} "
-                f"(elevated stationary)"
+                f"({label}; idle-torque warning suppressed at "
+                f"{self._limits.idle_torque_warn_nm:.1f} Nm)"
             )
         return f"{self.joint_name} {self._measurement_suffix(msg)}"
 
@@ -181,56 +239,92 @@ class PerJointTracker(HealthTracker):
             if self.period_position_jump is not None:
                 level = DiagnosticStatus.WARN
                 jump = self.period_position_jump
-                message = (
-                    f"position jump {jump:.2f}/"
-                    f"{self._limits.max_position_jump_rad:.2f} rad"
-                )
+                if msg is not None:
+                    message = self._warn_message(
+                        msg,
+                        f"position jump {jump:.2f}/"
+                        f"{self._limits.max_position_jump_rad:.2f} rad",
+                    )
+                else:
+                    message = (
+                        f"position jump {jump:.2f}/"
+                        f"{self._limits.max_position_jump_rad:.2f} rad"
+                    )
                 reason = "position_jump"
             elif self.period_torque_jump is not None:
                 level = DiagnosticStatus.WARN
                 jump = self.period_torque_jump
-                message = (
-                    f"torque jump {jump:.2f}/"
-                    f"{self._limits.max_torque_jump_nm:.2f} Nm"
-                )
+                if msg is not None:
+                    message = self._warn_message(
+                        msg,
+                        f"torque jump {jump:.2f}/"
+                        f"{self._limits.max_torque_jump_nm:.2f} Nm",
+                    )
+                else:
+                    message = (
+                        f"torque jump {jump:.2f}/"
+                        f"{self._limits.max_torque_jump_nm:.2f} Nm"
+                    )
                 reason = "torque_jump"
-            elif self.period_high_vel and msg is not None:
-                level = DiagnosticStatus.WARN
-                message = (
-                    f"high velocity |v|={self._velocity_vs_max(float(msg.velocity))}"
+            elif msg is not None:
+                exceeds_max_torque, exceeds_max_velocity, elevated_stationary = (
+                    self._live_motion_flags(msg)
                 )
-                reason = "high_velocity"
-            elif self.period_high_torque and msg is not None:
-                level = DiagnosticStatus.WARN
-                message = (
-                    f"high torque |T|={self._torque_vs_max(float(msg.torque))}"
+                effort_suppressed = (
+                    elevated_stationary
+                    and self._stationary_effort_suppressed(context)
                 )
-                reason = "high_torque"
-            elif self.period_idle_torque:
-                if not self._stationary_effort_suppressed(context):
-                    level = DiagnosticStatus.WARN
-                    if msg is not None:
-                        message = (
-                            "high torque while idle "
-                            f"|T|={self._torque_vs_idle(float(msg.torque))}"
-                        )
-                    else:
-                        message = "high torque while idle"
-                    reason = "idle_torque"
-                elif msg is not None:
-                    message = self._healthy_message(msg, elevated=True)
+                context_clause = self._context_clause(context)
 
-        stationary_suppressed = (
-            self.period_idle_torque and self._stationary_effort_suppressed(context)
-        )
-        if level == DiagnosticStatus.OK and msg is not None and not stationary_suppressed:
-            message = self._healthy_message(msg)
+                if exceeds_max_velocity:
+                    level = DiagnosticStatus.WARN
+                    message = self._warn_message(
+                        msg,
+                        "high velocity",
+                        detail=context_clause,
+                    )
+                    reason = "high_velocity"
+                elif exceeds_max_torque:
+                    level = DiagnosticStatus.WARN
+                    message = self._warn_message(
+                        msg,
+                        "high torque",
+                        detail=context_clause,
+                    )
+                    reason = "high_torque"
+                elif elevated_stationary and not effort_suppressed:
+                    level = DiagnosticStatus.WARN
+                    message = self._warn_message(
+                        msg,
+                        "high stationary effort",
+                        detail=(
+                            f"(idle threshold "
+                            f"{self._torque_vs_idle(float(msg.torque))})"
+                        ),
+                    )
+                    reason = "idle_torque"
+                elif effort_suppressed:
+                    message = self._healthy_message(
+                        msg, elevated=True, context=context
+                    )
+                else:
+                    message = self._healthy_message(msg)
+
+        elevated_stationary = False
+        effort_suppressed = False
+        if msg is not None:
+            _, _, elevated_stationary = self._live_motion_flags(msg)
+            effort_suppressed = (
+                elevated_stationary
+                and self._stationary_effort_suppressed(context)
+            )
+
         if reason:
             self.last_warning_reason = reason
-        elif stationary_suppressed and self.last_warning_reason == "idle_torque":
+        elif effort_suppressed and self.last_warning_reason == "idle_torque":
             self.last_warning_reason = ""
 
-        load_state = "elevated" if self.period_idle_torque else "nominal"
+        load_state = "elevated" if elevated_stationary else "nominal"
         values: list[KeyValue] = [
             kv("topic", self.topic),
             kv("last_message_age_s", "n/a" if age is None else f"{age:.3f}"),
@@ -238,6 +332,7 @@ class PerJointTracker(HealthTracker):
             kv("max_abs_joint_torque_nm", self._limits.max_abs_torque_nm),
             kv("idle_velocity_threshold_rad_s", self._limits.idle_velocity_threshold_rad_s),
             kv("idle_torque_warn_nm", self._limits.idle_torque_warn_nm),
+            kv("payload_profile", self.params.get("payload_profile", "light")),
             kv("control_context", context.control_context),
             kv("load_state", load_state),
             kv(
@@ -245,7 +340,15 @@ class PerJointTracker(HealthTracker):
                 context.gravity_compensation_active,
             ),
             kv("position_hold_active", context.position_hold_active),
-            kv("stationary_effort_check_suppressed", stationary_suppressed),
+            kv("stationary_effort_check_suppressed", effort_suppressed),
+            kv(
+                "peak_abs_torque_nm_this_period",
+                f"{self.period_peak_abs_torque_nm:.3f}",
+            ),
+            kv(
+                "peak_abs_velocity_rad_s_this_period",
+                f"{self.period_peak_abs_velocity_rad_s:.3f}",
+            ),
             kv("last_warning_reason", self.last_warning_reason or "none"),
         ]
         if msg is not None:
