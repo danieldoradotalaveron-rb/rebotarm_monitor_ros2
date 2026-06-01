@@ -1,21 +1,40 @@
 # rebotarm_monitor_ros2
 
-[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20%7C%20Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build system: colcon](https://img.shields.io/badge/build-colcon-9cf)](https://colcon.readthedocs.io/)
+> ROS 2 health monitoring for **reBot Arm B601-DM** — read-only `diagnostic_msgs`
+> alongside the
+> [Seeed reBot Arm driver](https://github.com/Seeed-Projects/reBotArmController_ROS2).
 
-ROS 2 workspace with a single package, `rebotarm_monitor`, that subscribes to
-the topics published by a running reBot Arm B601-DM driver, polls a few host
-metrics (SocketCAN counters, driver process health), and publishes
-`diagnostic_msgs/DiagnosticArray` on `/diagnostics`.
+[![CI](https://github.com/danieldoradotalaveron-rb/rebotarm_monitor_ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/danieldoradotalaveron-rb/rebotarm_monitor_ros2/actions/workflows/ci.yml)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/jazzy/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Driver](https://img.shields.io/badge/driver-Seeed%20reBotArm-8A2BE2)](https://github.com/Seeed-Projects/reBotArmController_ROS2)
 
 <p align="center">
-  <img src="docs/hero.png" alt="rebotarm_monitor_ros2 — ROS 2 diagnostics monitor for reBot Arm B601-DM" width="92%"/>
+  <img src="docs/hero.png" alt="rebotarm_monitor_ros2 — diagnostics for reBot Arm B601-DM" width="800"/>
 </p>
+
+`rebotarm_monitor` subscribes to driver topics, checks host link and process
+health, and publishes `/diagnostics` (with `diagnostic_aggregator` for
+`rqt_robot_monitor`).
+
+## Quick start
+
+Prerequisites: [Seeed driver](https://github.com/Seeed-Projects/reBotArmController_ROS2)
+built and `reBotArmController` running.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /path/to/driver-workspace/install/setup.bash
+cd /path/to/rebotarm_monitor_ros2
+colcon build --packages-select rebotarm_monitor && source install/setup.bash
+ros2 launch rebotarm_monitor monitor.launch.py
+# optional: ros2 run rqt_robot_monitor rqt_robot_monitor
+```
 
 ## Contents
 
+- [Quick start](#quick-start)
 - [Requirements](#requirements)
 - [Build](#build)
 - [Run](#run)
@@ -28,9 +47,9 @@ metrics (SocketCAN counters, driver process health), and publishes
 
 ## Requirements
 
-- ROS 2 Jazzy (future compatibility with Humble).
-- A sourced ROS 2 workspace that provides `rebotarm_msgs` (built from the
-  Seeed reBot Arm driver workspace with `colcon`).
+- ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/) on Ubuntu 24.04 (same as CI).
+- A sourced workspace that provides `rebotarm_msgs` from the
+  [Seeed reBot Arm driver](https://github.com/Seeed-Projects/reBotArmController_ROS2).
 - A running `reBotArmController` node.
 - `python3-psutil` (declared as an `exec_depend`; install with `rosdep` or
   `apt install python3-psutil`).
@@ -53,7 +72,7 @@ ros2 run rqt_robot_monitor rqt_robot_monitor   # optional GUI
 ```
 
 The launch file starts the monitor node plus a `diagnostic_aggregator` so the
-output is ready to be visualised in `rqt_robot_monitor`.
+output is ready to be visualized in `rqt_robot_monitor`.
 
 ### Aggregator groups in rqt
 
@@ -116,6 +135,10 @@ Topics published:
 | `/diagnostics_toplevel_state` | `diagnostic_msgs/DiagnosticStatus` (from aggregator) |
 
 ## Configuration
+
+Launch arguments below cover the common cases. For the full parameter table and
+diagnostic reference, see
+[`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md).
 
 ROS 2 parameters resolve in this order (lowest → highest precedence):
 
