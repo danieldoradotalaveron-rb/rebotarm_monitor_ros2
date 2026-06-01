@@ -210,7 +210,8 @@ expected). Detection uses `state_machine` only, not `mode == "mit"`. Absolute
 **Motor families (shipped defaults):** joints 1–3 use larger 4340P-class motors;
 joints 4–6 use smaller 4310-class motors. `per_joint_max_abs_torque_nm` overrides
 are defined in `parameters.py` (`joint1`–`3`: 9.0 Nm, `joint4`–`6`: 3.0 Nm), not
-in `monitor.yaml` — the ROS 2 params-file parser cannot load dict parameters.
+in `monitor.yaml` — `rclpy.declare_parameter` only accepts scalars and arrays;
+dict parameters raise `TypeError`.
 
 `per_joint_idle_torque_warn_nm` stays empty (global 3.0 Nm for all joints).
 

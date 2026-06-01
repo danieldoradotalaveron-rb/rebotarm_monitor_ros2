@@ -111,6 +111,13 @@ class JointStatesTracker(HealthTracker):
         self.max_abs_effort_observed = 0.0
         self.rate.reset()
 
+    @staticmethod
+    def _abnormal_joints_message(joints: dict[str, float]) -> tuple[str, str]:
+        """Generic summary when one or more joints tripped a per-joint check."""
+        count = len(joints)
+        message = f"some joints in abnormal state ({count} joints)"
+        return message, "abnormal_state"
+
     def build_status(self, now: float, context: TrackerContext) -> DiagnosticStatus:
         rate = self.rate.measured_hz()
         min_rate = self.params["expected_rate_hz"] * self.params["min_rate_ratio"]
@@ -153,23 +160,25 @@ class JointStatesTracker(HealthTracker):
             message = "missing velocity or effort arrays"
             reason = "missing_arrays"
         elif self.period_position_jumps:
-            joint = next(iter(self.period_position_jumps))
             level = DiagnosticStatus.WARN
-            message = f"position jump on {joint}"
-            reason = f"position_jump:{joint}"
+            message, reason = self._abnormal_joints_message(self.period_position_jumps)
         elif self.period_high_vel:
-            joint = next(iter(self.period_high_vel))
             level = DiagnosticStatus.WARN
-            message = f"high velocity on {joint}"
-            reason = f"high_velocity:{joint}"
+            message, reason = self._abnormal_joints_message(self.period_high_vel)
         elif self.period_high_effort:
-            joint = next(iter(self.period_high_effort))
             level = DiagnosticStatus.WARN
-            message = f"high effort on {joint}"
-            reason = f"high_effort:{joint}"
+            message, reason = self._abnormal_joints_message(self.period_high_effort)
 
         if reason:
             self.last_warning_reason = reason
+
+        abnormal_joints: dict[str, float] = {}
+        if self.period_position_jumps:
+            abnormal_joints = self.period_position_jumps
+        elif self.period_high_vel:
+            abnormal_joints = self.period_high_vel
+        elif self.period_high_effort:
+            abnormal_joints = self.period_high_effort
 
         values: list[KeyValue] = [
             kv("topic", self.topic),
@@ -184,6 +193,11 @@ class JointStatesTracker(HealthTracker):
             kv("max_abs_effort_nm_observed", f"{self.max_abs_effort_observed:.3f}"),
             kv("last_warning_reason", self.last_warning_reason or "none"),
         ]
+        if abnormal_joints:
+            values.append(kv("abnormal_joint_count", len(abnormal_joints)))
+            values.append(
+                kv("abnormal_joint_names", ", ".join(sorted(abnormal_joints)))
+            )
         for joint, jump in sorted(self.period_position_jumps.items()):
             values.append(kv(f"{joint}_position_jump_rad", f"{jump:.3f}"))
         for joint, vel in sorted(self.period_high_vel.items()):

@@ -87,7 +87,8 @@ def test_position_jump_yields_warn():
     tracker.rate.window_start = time.monotonic() - 1.0
     status = tracker.build_status(time.monotonic(), TrackerContext())
     assert status.level == DiagnosticStatus.WARN
-    assert "position jump" in status.message
+    assert status.message == "some joints in abnormal state (1 joints)"
+    assert tracker.last_warning_reason == "abnormal_state"
 
 
 def test_high_velocity_yields_warn():
@@ -97,7 +98,29 @@ def test_high_velocity_yields_warn():
     tracker.rate.window_start = time.monotonic() - 1.0
     status = tracker.build_status(time.monotonic(), TrackerContext())
     assert status.level == DiagnosticStatus.WARN
-    assert "high velocity" in status.message
+    assert "abnormal state" in status.message
+
+
+def test_high_effort_multiple_joints_generic_message():
+    tracker = make_tracker()
+    tracker.on_message(
+        make_joint_state(
+            ["joint2", "joint3"],
+            [0.0, 0.0],
+            [0.0, 0.0],
+            [9.0, 10.0],
+        )
+    )
+    tracker.rate.msg_count = 60
+    tracker.rate.window_start = time.monotonic() - 1.0
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert status.level == DiagnosticStatus.WARN
+    assert status.message == "some joints in abnormal state (2 joints)"
+    values = {entry.key: entry.value for entry in status.values}
+    assert values["abnormal_joint_count"] == "2"
+    assert values["abnormal_joint_names"] == "joint2, joint3"
+    assert values["joint2_effort_nm"] == "9.000"
+    assert values["joint3_effort_nm"] == "10.000"
 
 
 def test_missing_velocity_array_yields_warn():

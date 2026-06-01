@@ -3,18 +3,27 @@
 Lives outside ``node.py`` so the contract (names, types, defaults) is a single
 flat module that can be exercised without spinning up rclpy.
 
-ROS 2 parameter override chain (lowest to highest precedence):
+Two parameter classes, two delivery paths:
 
-    1. The defaults listed in ``_PARAM_SPECS`` below
-       (used when nothing else sets the value).
-    2. A YAML passed to the node via ``parameters=[config_file]`` in the
-       launch file. See ``config/monitor.yaml``.
-    3. A dict passed in the same ``parameters=[...]`` list (typically wired
-       to ``LaunchConfiguration`` substitutions in the launch).
-    4. CLI overrides on ``ros2 launch ... key:=value``.
+* **Scalars and lists** (``_PARAM_SPECS``) follow the standard ROS 2 override
+  chain (lowest to highest precedence):
 
-``declare_parameters`` registers the defaults, ``load_params`` reads whatever
-value the parameter system ended up with after all the layers above resolved.
+      1. The defaults listed in ``_PARAM_SPECS`` below.
+      2. ``config/monitor.yaml`` loaded by the launch via ``parameters=[...]``.
+      3. A dict in the same ``parameters=[...]`` list (``LaunchConfiguration``
+         substitutions in the launch file).
+      4. CLI overrides on ``ros2 launch ... key:=value``.
+
+* **Per-joint maps** (``per_joint_max_abs_torque_nm`` /
+  ``per_joint_idle_torque_warn_nm``) are *not* ROS parameters. ``rclpy``'s
+  ``declare_parameter`` only accepts ``bool``, ``int``, ``float``, ``str`` and
+  arrays of those; ``dict`` raises ``TypeError``. They live as Python
+  constants in this module (see ``_B601_PER_JOINT_MAX_ABS_TORQUE_NM``) and are
+  inyected into the params dict by :func:`load_params`. Editing them requires
+  a rebuild; YAML/launch/CLI overrides do **not** apply.
+
+``declare_parameters`` registers the scalar defaults, ``load_params`` reads
+whatever the parameter system resolved and tacks on the per-joint maps.
 """
 
 from __future__ import annotations
@@ -23,9 +32,8 @@ from typing import Any
 
 from rclpy.node import Node
 
-# B601-DM: joint1-3 (4340P-class) vs joint4-6 (4310-class). Not ROS parameters:
-# rclpy only allows bool/int/float/string and arrays — dicts raise TypeError on
-# declare_parameter. Applied in load_params(); edit here to tune per robot.
+# B601-DM: joint1-3 (4340P-class) vs joint4-6 (4310-class). Applied in
+# load_params(); see module docstring for why dicts cannot be ROS parameters.
 _B601_PER_JOINT_MAX_ABS_TORQUE_NM: dict[str, float] = {
     "joint1": 9.0,
     "joint2": 9.0,

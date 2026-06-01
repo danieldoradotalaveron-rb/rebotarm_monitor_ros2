@@ -31,13 +31,33 @@ class MonitorOrchestrator:
     def _build_context(self) -> TrackerContext:
         for tracker in self._trackers:
             if isinstance(tracker, ArmStatusTracker):
-                gravity_compensation_active = (
-                    tracker.last_msg is not None
-                    and tracker.last_msg.state_machine == "GRAVITY_COMP"
-                )
+                msg = tracker.last_msg
+                arm_enabled = tracker.arm_enabled
+                if msg is None:
+                    return TrackerContext(arm_enabled=arm_enabled)
+                if msg.state_machine == "GRAVITY_COMP":
+                    return TrackerContext(
+                        arm_enabled=arm_enabled,
+                        gravity_compensation_active=True,
+                        position_hold_active=False,
+                        control_context="gravity_compensation",
+                    )
+                if (
+                    msg.mode == "pos_vel"
+                    and bool(msg.enabled)
+                    and bool(msg.control_loop_active)
+                ):
+                    return TrackerContext(
+                        arm_enabled=arm_enabled,
+                        gravity_compensation_active=False,
+                        position_hold_active=True,
+                        control_context="position_hold",
+                    )
                 return TrackerContext(
-                    arm_enabled=tracker.arm_enabled,
-                    gravity_compensation_active=gravity_compensation_active,
+                    arm_enabled=arm_enabled,
+                    gravity_compensation_active=False,
+                    position_hold_active=False,
+                    control_context="normal_or_unknown",
                 )
         return TrackerContext()
 

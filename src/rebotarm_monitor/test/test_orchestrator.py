@@ -93,6 +93,34 @@ def test_context_gravity_compensation_active_when_state_is_gravity_comp():
     orchestrator = MonitorOrchestrator([arm, stub])
     orchestrator.build_statuses(now=time.monotonic())
     assert stub.last_context.gravity_compensation_active is True
+    assert stub.last_context.position_hold_active is False
+    assert stub.last_context.control_context == "gravity_compensation"
+
+
+def test_context_position_hold_when_pos_vel_enabled_and_loop_active():
+    arm = ArmStatusTracker(
+        "/rebotarm/arm_status",
+        {
+            "arm_status_stale_timeout_s": 1.0,
+            "arm_status_warn_on_snapshot_age": False,
+            "expect_arm_enabled": False,
+            "expect_control_loop_active": False,
+        },
+    )
+    arm.on_message(
+        make_arm_status(
+            mode="pos_vel",
+            enabled=True,
+            control_loop_active=True,
+            state_machine="IDLE",
+        )
+    )
+    stub = StubTracker()
+    orchestrator = MonitorOrchestrator([arm, stub])
+    orchestrator.build_statuses(now=time.monotonic())
+    assert stub.last_context.position_hold_active is True
+    assert stub.last_context.gravity_compensation_active is False
+    assert stub.last_context.control_context == "position_hold"
 
 
 def test_context_gravity_compensation_inactive_when_state_is_idle():
@@ -110,6 +138,7 @@ def test_context_gravity_compensation_inactive_when_state_is_idle():
     orchestrator = MonitorOrchestrator([arm, stub])
     orchestrator.build_statuses(now=time.monotonic())
     assert stub.last_context.gravity_compensation_active is False
+    assert stub.last_context.control_context == "normal_or_unknown"
 
 
 def test_mit_mode_without_gravity_comp_state_does_not_activate_context_flag():
@@ -127,6 +156,8 @@ def test_mit_mode_without_gravity_comp_state_does_not_activate_context_flag():
     orchestrator = MonitorOrchestrator([arm, stub])
     orchestrator.build_statuses(now=time.monotonic())
     assert stub.last_context.gravity_compensation_active is False
+    assert stub.last_context.position_hold_active is False
+    assert stub.last_context.control_context == "normal_or_unknown"
 
 
 def test_reset_periods_calls_every_tracker():

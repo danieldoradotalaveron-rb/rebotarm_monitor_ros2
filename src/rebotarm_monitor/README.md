@@ -125,12 +125,14 @@ Most-used parameters:
 
 - `arm_enabled` — forwarded to per-joint `status_code` checks.
 - `gravity_compensation_active` — `True` when `state_machine == GRAVITY_COMP`.
+- `position_hold_active` — `True` when `mode == pos_vel`, `enabled`, and `control_loop_active`.
+- `control_context` — `gravity_compensation`, `position_hold`, or `normal_or_unknown`.
 
 `PerJointTracker` uses the context as follows:
 
-| Check | IDLE / normal | `GRAVITY_COMP` |
-|-------|----------------|----------------|
-| `high torque while idle` | WARN if low velocity and \|torque\| > `idle_torque_warn_nm` | **Suppressed** |
+| Check | `normal_or_unknown` | `GRAVITY_COMP` or `position_hold` |
+|-------|---------------------|-----------------------------------|
+| Stationary effort (\|vel\| low, \|torque\| > `idle_torque_warn_nm`) | WARN `high torque while idle` | **OK** + KV (`load_state=elevated`, `stationary_effort_check_suppressed=true`) |
 | `high torque` (absolute) | WARN if \|torque\| > resolved `max_abs_joint_torque_nm` | **Still WARN** |
 
 Do not infer gravity compensation from `mode == "mit"`.
@@ -139,8 +141,12 @@ Do not infer gravity compensation from `mode == "mit"`.
 sets 9.0 Nm on joint1–3 and 3.0 Nm on joint4–6; idle map stays `{}` (global
 3.0 Nm). These are not ROS parameters — edit the constant and rebuild.
 
-Per-joint diagnostics expose `control_gravity_compensation_active` and
-`idle_torque_check_suppressed` in the status key/value list when relevant.
+Per-joint `message` lines show live **|T|** and **|v|** vs resolved limits
+(e.g. `joint3 |T|=4.2/9.0 Nm |v|=0.0/10.0 rad/s`). WARN lines include the
+failing quantity (`high torque |T|=9.5/9.0 Nm`). Limits come from the tracker
+`params` dict via `PerJointLimitsView` (factory + `resolve_joint_threshold`);
+future robot profiles only change that wiring. KeyValues also expose
+`torque_vs_max_nm`, `torque_vs_idle_nm`, `velocity_vs_max_rad_s`.
 
 ## Example overrides
 
