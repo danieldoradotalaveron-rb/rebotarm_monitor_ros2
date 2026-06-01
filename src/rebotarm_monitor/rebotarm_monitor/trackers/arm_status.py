@@ -80,8 +80,7 @@ class ArmStatusTracker(HealthTracker):
             reason = "stale_snapshot"
         elif msg is not None:
             message = (
-                f"mode={msg.mode} enabled={msg.enabled} "
-                f"loop={msg.control_loop_active} state={msg.state_machine}"
+                f"active mode: {msg.mode}, state: {msg.state_machine}"
             )
 
         if msg is not None and msg.error_codes:

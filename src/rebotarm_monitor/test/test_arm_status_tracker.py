@@ -37,7 +37,7 @@ def test_healthy_message_yields_ok():
     status = tracker.build_status(time.monotonic(), TrackerContext())
     assert status.name == "rebotarm/control/arm_status"
     assert status.level == DiagnosticStatus.OK
-    assert "enabled=True" in status.message
+    assert status.message == "active mode: 0, state: 0"
 
 
 def test_arm_enabled_property_reflects_message():
