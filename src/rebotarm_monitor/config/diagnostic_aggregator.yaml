@@ -2,6 +2,10 @@
   ros__parameters:
     pub_rate: 1.0
     path: RebotArm
+    control:
+      type: diagnostic_aggregator/GenericAnalyzer
+      path: Control
+      startswith: ["rebotarm/control"]
     hardware:
       type: diagnostic_aggregator/GenericAnalyzer
       path: Hardware

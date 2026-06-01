@@ -28,7 +28,7 @@ class ArmStatusTracker(HealthTracker):
     suppress sibling warnings based on the arm's control mode.
     """
 
-    DIAG_NAME = "rebotarm/hardware/arm_status"
+    DIAG_NAME = "rebotarm/control/arm_status"
 
     def __init__(self, topic: str, params: dict) -> None:
         self.topic = topic
