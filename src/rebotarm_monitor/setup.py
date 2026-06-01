@@ -5,9 +5,11 @@ Everything else (pytest, ruff, build-system) lives in pyproject.toml.
 Notes:
 - ``data_files`` cannot move to pyproject.toml: ament_python relies on it to
   copy launch and config files into ``install/share/<pkg>/``.
-- We register a small ``cmdclass`` for ``test`` so that ``colcon test``
-  (which calls ``python setup.py test``) delegates to pytest. Without this
-  hook colcon falls back to setuptools' unittest runner, which finds nothing.
+- ``tests_require=['pytest']`` lets ``colcon test`` use colcon's pytest step,
+  which writes JUnit XML under ``build/<pkg>/pytest.xml`` for
+  ``colcon test-result``.
+- We register a ``cmdclass`` for ``test`` so ``python setup.py test`` still
+  delegates to pytest (``test_pytest_suite.py`` is only for manual unittest).
 """
 
 import sys
@@ -48,6 +50,7 @@ setup(
         (f"share/{package_name}/config", glob("config/*.yaml")),
     ],
     install_requires=["setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="reBotArm Maintainers",
     maintainer_email="support@example.com",
