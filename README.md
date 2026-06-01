@@ -142,11 +142,10 @@ diagnostic reference, see
 
 ROS 2 parameters resolve in this order (lowest → highest precedence):
 
-1. Defaults declared in `rebotarm_monitor/parameters.py`.
-2. YAML loaded by the launch file (`config/monitor.yaml`).
-3. The `LaunchConfiguration` dict passed in the launch (overrides #2 for the
-   subset of parameters the launch exposes as `DeclareLaunchArgument`).
-4. CLI overrides: `ros2 launch ... key:=value`.
+1. Defaults declared in `rebotarm_monitor/parameters.py` (scalars/lists).
+2. B601 per-joint max-torque map applied in `load_params()` (not a ROS param).
+3. YAML from the launch file (`config/monitor.yaml`).
+4. `LaunchConfiguration` + CLI overrides for launch-exposed scalars.
 
 The most-used parameters are exposed as launch arguments:
 
@@ -188,22 +187,36 @@ ros2 launch rebotarm_monitor monitor.launch.py \
   serial_device:=/dev/ttyRebotB601
 ```
 
-For the full list (per-joint thresholds, status-code mapping, etc.) edit
-`config/monitor.yaml`.
+Scalar tuning (rates, stale timeouts, serial device, globals such as
+`idle_torque_warn_nm` / `max_abs_joint_torque_nm`) lives in `config/monitor.yaml`.
+Per-joint **maps** (`per_joint_max_abs_torque_nm`, `per_joint_idle_torque_warn_nm`)
+are **not** ROS parameters (rclpy rejects dict types). B601 defaults live in
+`parameters.py` (`_B601_PER_JOINT_MAX_ABS_TORQUE_NM`); edit that constant to tune.
 
-Per-joint torque diagnostics use global defaults (`max_abs_joint_torque_nm`,
-`idle_torque_warn_nm`) unless overridden in YAML:
+### Per-joint torque (B601-DM)
 
-```yaml
-per_joint_idle_torque_warn_nm:
-  joint3: 5.0
-per_joint_max_abs_torque_nm:
-  joint3: 10.0
-```
+Global fallbacks (in `monitor.yaml` and `parameters.py`):
 
-Keys must match `joint_names`. Empty maps `{}` preserve the default behavior for
-all joints. See [`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md)
-for the full parameter table.
+- `idle_torque_warn_nm: 3.0` — WARN `high torque while idle` when velocity is
+  near zero and \|torque\| exceeds this value.
+- `max_abs_joint_torque_nm: 8.0` — WARN `high torque` when \|torque\| exceeds this
+  value (absolute limit).
+
+**Gravity compensation:** when `arm_status.state_machine == GRAVITY_COMP`, the
+per-joint tracker **does not** emit `high torque while idle` (support torque is
+expected). Detection uses `state_machine` only, not `mode == "mit"`. Absolute
+`high torque` warnings still apply.
+
+**Motor families (shipped defaults):** joints 1–3 use larger 4340P-class motors;
+joints 4–6 use smaller 4310-class motors. `per_joint_max_abs_torque_nm` overrides
+are defined in `parameters.py` (`joint1`–`3`: 9.0 Nm, `joint4`–`6`: 3.0 Nm), not
+in `monitor.yaml` — the ROS 2 params-file parser cannot load dict parameters.
+
+`per_joint_idle_torque_warn_nm` stays empty (global 3.0 Nm for all joints).
+
+Keys must match `joint_names`. Missing keys use the global fallback. See
+[`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md) for the full
+parameter table.
 
 ## Architecture
 

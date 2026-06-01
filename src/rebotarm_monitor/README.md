@@ -52,7 +52,7 @@ The launch picks one of two aggregator configs based on `enable_can_monitor`:
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | rate, stale timeout, finite values, value jumps, high velocity, high effort |
 | `rebotarm/control/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
 | `rebotarm/control/gravity_compensation` | `/rebotarm/arm_status` | `gravity_compensation_active` when `state_machine == GRAVITY_COMP` (not inferred from `mode`); `state_machine`, `mode`, `enabled`, `control_loop_active` |
-| `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque, `status_code` |
+| `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque (suppressed when `state_machine == GRAVITY_COMP`), `status_code` |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
 | `rebotarm/link/serial` | host device node | path exists, character device, read/write permissions |
 | `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (only when `enable_can_monitor:=true`) |
@@ -77,10 +77,11 @@ driver's `channel:=` argument. The default `/dev/ttyACM0` matches Seeed's
 
 ROS 2 parameter resolution order (lowest → highest):
 
-1. Defaults declared in `rebotarm_monitor/parameters.py`.
-2. `config/monitor.yaml` loaded by the launch file.
+1. Defaults declared in `rebotarm_monitor/parameters.py` (scalars/lists).
+   B601 per-joint max-torque map is injected in `load_params()` (not a ROS param).
+2. `config/monitor.yaml` loaded by the launch file (scalars and lists only).
 3. The `LaunchConfiguration` dict in `monitor.launch.py`.
-4. CLI overrides on `ros2 launch ... key:=value`.
+4. CLI overrides on `ros2 launch ... key:=value` (scalars exposed in launch).
 
 `config/monitor.yaml` uses the wildcard `/**:` block so it applies regardless
 of the node name you launch with.
@@ -98,8 +99,8 @@ Most-used parameters:
 | `idle_velocity_threshold_rad_s` | `0.05` |
 | `idle_torque_warn_nm` | `3.0` (global fallback for per-joint idle torque WARN) |
 | `max_abs_joint_torque_nm` | `8.0` (global fallback for per-joint high torque WARN) |
-| `per_joint_idle_torque_warn_nm` | `{}` (optional map: joint name → Nm; missing keys use `idle_torque_warn_nm`) |
-| `per_joint_max_abs_torque_nm` | `{}` (optional map: joint name → Nm; missing keys use `max_abs_joint_torque_nm`) |
+| `per_joint_idle_torque_warn_nm` | `{}` via `load_params()` (not a ROS parameter) |
+| `per_joint_max_abs_torque_nm` | B601 map via `load_params()` (joint1–3: 9.0, joint4–6: 3.0 Nm) |
 | `arm_status_stale_timeout_s` | `1.0` |
 | `arm_status_warn_on_snapshot_age` | `false` |
 | `gripper_stale_timeout_s` | `1.0` |
@@ -116,6 +117,30 @@ Most-used parameters:
 | `driver_threads_warn` | `64` |
 | `status_log_period_s` | `1.0` |
 | `diagnostics_period_s` | `1.0` |
+
+### Per-joint torque behavior
+
+`MonitorOrchestrator` builds a `TrackerContext` each cycle from
+`ArmStatusTracker.last_msg`:
+
+- `arm_enabled` — forwarded to per-joint `status_code` checks.
+- `gravity_compensation_active` — `True` when `state_machine == GRAVITY_COMP`.
+
+`PerJointTracker` uses the context as follows:
+
+| Check | IDLE / normal | `GRAVITY_COMP` |
+|-------|----------------|----------------|
+| `high torque while idle` | WARN if low velocity and \|torque\| > `idle_torque_warn_nm` | **Suppressed** |
+| `high torque` (absolute) | WARN if \|torque\| > resolved `max_abs_joint_torque_nm` | **Still WARN** |
+
+Do not infer gravity compensation from `mode == "mit"`.
+
+**B601-DM shipped defaults (`parameters.py`):** `_B601_PER_JOINT_MAX_ABS_TORQUE_NM`
+sets 9.0 Nm on joint1–3 and 3.0 Nm on joint4–6; idle map stays `{}` (global
+3.0 Nm). These are not ROS parameters — edit the constant and rebuild.
+
+Per-joint diagnostics expose `control_gravity_compensation_active` and
+`idle_torque_check_suppressed` in the status key/value list when relevant.
 
 ## Example overrides
 
@@ -152,9 +177,11 @@ rebotarm_monitor/
 └── support/            # diagnostics helpers, rate window
 ```
 
-Trackers depend only on `domain/` and `adapters/`; the orchestrator only on
-`domain/`; the node only on `parameters.py`, `factories.py`, and the
-orchestrator. This keeps logic testable without rclpy.
+Trackers depend only on `domain/` and `adapters/`; the orchestrator reads
+`ArmStatusTracker` once per cycle to populate `TrackerContext` for siblings (e.g.
+per-joint idle-torque suppression during gravity compensation). The node only
+touches `parameters.py`, `factories.py`, and the orchestrator. Logic stays
+testable without rclpy.
 
 ## Tests
 

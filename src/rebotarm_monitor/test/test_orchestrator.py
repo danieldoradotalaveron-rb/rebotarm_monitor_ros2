@@ -78,6 +78,57 @@ def test_context_carries_arm_enabled_from_arm_status_tracker():
     assert stub.last_context.arm_enabled is False
 
 
+def test_context_gravity_compensation_active_when_state_is_gravity_comp():
+    arm = ArmStatusTracker(
+        "/rebotarm/arm_status",
+        {
+            "arm_status_stale_timeout_s": 1.0,
+            "arm_status_warn_on_snapshot_age": False,
+            "expect_arm_enabled": False,
+            "expect_control_loop_active": False,
+        },
+    )
+    arm.on_message(make_arm_status(state_machine="GRAVITY_COMP"))
+    stub = StubTracker()
+    orchestrator = MonitorOrchestrator([arm, stub])
+    orchestrator.build_statuses(now=time.monotonic())
+    assert stub.last_context.gravity_compensation_active is True
+
+
+def test_context_gravity_compensation_inactive_when_state_is_idle():
+    arm = ArmStatusTracker(
+        "/rebotarm/arm_status",
+        {
+            "arm_status_stale_timeout_s": 1.0,
+            "arm_status_warn_on_snapshot_age": False,
+            "expect_arm_enabled": False,
+            "expect_control_loop_active": False,
+        },
+    )
+    arm.on_message(make_arm_status(state_machine="IDLE"))
+    stub = StubTracker()
+    orchestrator = MonitorOrchestrator([arm, stub])
+    orchestrator.build_statuses(now=time.monotonic())
+    assert stub.last_context.gravity_compensation_active is False
+
+
+def test_mit_mode_without_gravity_comp_state_does_not_activate_context_flag():
+    arm = ArmStatusTracker(
+        "/rebotarm/arm_status",
+        {
+            "arm_status_stale_timeout_s": 1.0,
+            "arm_status_warn_on_snapshot_age": False,
+            "expect_arm_enabled": False,
+            "expect_control_loop_active": False,
+        },
+    )
+    arm.on_message(make_arm_status(mode="mit", state_machine="IDLE"))
+    stub = StubTracker()
+    orchestrator = MonitorOrchestrator([arm, stub])
+    orchestrator.build_statuses(now=time.monotonic())
+    assert stub.last_context.gravity_compensation_active is False
+
+
 def test_reset_periods_calls_every_tracker():
     a, b = StubTracker(), StubTracker()
     orchestrator = MonitorOrchestrator([a, b])

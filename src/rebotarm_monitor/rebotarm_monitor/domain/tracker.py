@@ -25,6 +25,7 @@ class TrackerContext:
     """
 
     arm_enabled: Optional[bool] = None
+    gravity_compensation_active: bool = False
 
 
 class SubscriptionRegistrar(Protocol):

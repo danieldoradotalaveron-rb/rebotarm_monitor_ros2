@@ -150,7 +150,7 @@ class PerJointTracker(HealthTracker):
                 level = DiagnosticStatus.WARN
                 message = "high torque"
                 reason = "high_torque"
-            elif self.period_idle_torque:
+            elif self.period_idle_torque and not context.gravity_compensation_active:
                 level = DiagnosticStatus.WARN
                 message = "high torque while idle"
                 reason = "idle_torque"
@@ -166,6 +166,14 @@ class PerJointTracker(HealthTracker):
             kv("max_abs_joint_torque_nm", self.params["max_abs_joint_torque_nm"]),
             kv("idle_velocity_threshold_rad_s", self.params["idle_velocity_threshold_rad_s"]),
             kv("idle_torque_warn_nm", self.params["idle_torque_warn_nm"]),
+            kv(
+                "control_gravity_compensation_active",
+                context.gravity_compensation_active,
+            ),
+            kv(
+                "idle_torque_check_suppressed",
+                self.period_idle_torque and context.gravity_compensation_active,
+            ),
             kv("last_warning_reason", self.last_warning_reason or "none"),
         ]
         if msg is not None:

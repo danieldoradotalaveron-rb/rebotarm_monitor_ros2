@@ -31,7 +31,14 @@ class MonitorOrchestrator:
     def _build_context(self) -> TrackerContext:
         for tracker in self._trackers:
             if isinstance(tracker, ArmStatusTracker):
-                return TrackerContext(arm_enabled=tracker.arm_enabled)
+                gravity_compensation_active = (
+                    tracker.last_msg is not None
+                    and tracker.last_msg.state_machine == "GRAVITY_COMP"
+                )
+                return TrackerContext(
+                    arm_enabled=tracker.arm_enabled,
+                    gravity_compensation_active=gravity_compensation_active,
+                )
         return TrackerContext()
 
     def build_statuses(self, now: Optional[float] = None) -> list[DiagnosticStatus]:

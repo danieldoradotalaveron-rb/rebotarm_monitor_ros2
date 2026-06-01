@@ -23,6 +23,18 @@ from typing import Any
 
 from rclpy.node import Node
 
+# B601-DM: joint1-3 (4340P-class) vs joint4-6 (4310-class). Not ROS parameters:
+# rclpy only allows bool/int/float/string and arrays — dicts raise TypeError on
+# declare_parameter. Applied in load_params(); edit here to tune per robot.
+_B601_PER_JOINT_MAX_ABS_TORQUE_NM: dict[str, float] = {
+    "joint1": 9.0,
+    "joint2": 9.0,
+    "joint3": 9.0,
+    "joint4": 3.0,
+    "joint5": 3.0,
+    "joint6": 3.0,
+}
+
 
 _PARAM_SPECS: tuple[tuple[str, Any], ...] = (
     ("enable_joint_states_monitor", True),
@@ -44,8 +56,6 @@ _PARAM_SPECS: tuple[tuple[str, Any], ...] = (
     ("max_abs_joint_torque_nm", 8.0),
     ("idle_velocity_threshold_rad_s", 0.05),
     ("idle_torque_warn_nm", 3.0),
-    ("per_joint_max_abs_torque_nm", {}),
-    ("per_joint_idle_torque_warn_nm", {}),
     ("max_joint_position_jump_rad", 0.5),
     ("max_joint_torque_jump_nm", 3.0),
     ("expected_enabled_status_code", 1),
@@ -142,30 +152,6 @@ def _split_csv(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
-def _parse_float_map(value: Any, param_name: str) -> dict[str, float]:
-    """Normalize an optional per-joint threshold override map."""
-    if value is None or value == {}:
-        return {}
-    if not isinstance(value, dict):
-        raise TypeError(
-            f"parameter '{param_name}' must be a map of joint name to float, "
-            f"got {type(value).__name__}"
-        )
-    out: dict[str, float] = {}
-    for key, raw in value.items():
-        name = str(key).strip()
-        if not name:
-            continue
-        try:
-            out[name] = float(raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"parameter '{param_name}' entry '{name}' must be a float, "
-                f"got {raw!r}"
-            ) from exc
-    return out
-
-
 def resolve_joint_threshold(
     joint_name: str,
     global_value: float,
@@ -177,6 +163,14 @@ def resolve_joint_threshold(
     return global_value
 
 
+def per_joint_threshold_maps() -> tuple[dict[str, float], dict[str, float]]:
+    """Per-joint torque override maps (not exposed as ROS parameters)."""
+    return (
+        dict(_B601_PER_JOINT_MAX_ABS_TORQUE_NM),
+        {},
+    )
+
+
 def load_params(node: Node) -> dict[str, Any]:
     """Read every declared parameter, coerce it, and return a plain dict."""
     params: dict[str, Any] = {}
@@ -185,12 +179,9 @@ def load_params(node: Node) -> dict[str, Any]:
         if name in ("joint_names", "can_interfaces"):
             params[name] = _split_csv(raw)
             continue
-        if name in (
-            "per_joint_max_abs_torque_nm",
-            "per_joint_idle_torque_warn_nm",
-        ):
-            params[name] = _parse_float_map(raw, name)
-            continue
         caster = _TYPES.get(name)
         params[name] = caster(raw) if caster is not None else raw
+    max_map, idle_map = per_joint_threshold_maps()
+    params["per_joint_max_abs_torque_nm"] = max_map
+    params["per_joint_idle_torque_warn_nm"] = idle_map
     return params

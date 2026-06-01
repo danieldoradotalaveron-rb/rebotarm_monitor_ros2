@@ -84,9 +84,34 @@ def test_high_torque_yields_warn():
 def test_idle_torque_warning_triggers_when_arm_still():
     tracker = make_tracker()
     tracker.on_message(make_motor_state(velocity=0.0, torque=5.0))
-    status = tracker.build_status(time.monotonic(), TrackerContext())
+    status = tracker.build_status(
+        time.monotonic(),
+        TrackerContext(gravity_compensation_active=False),
+    )
     assert status.level == DiagnosticStatus.WARN
     assert "high torque while idle" in status.message
+
+
+def test_idle_torque_suppressed_during_gravity_compensation():
+    tracker = make_tracker()
+    tracker.on_message(make_motor_state(velocity=0.0, torque=5.0))
+    status = tracker.build_status(
+        time.monotonic(),
+        TrackerContext(gravity_compensation_active=True),
+    )
+    assert status.level == DiagnosticStatus.OK
+    assert "high torque while idle" not in status.message
+
+
+def test_absolute_high_torque_still_warns_during_gravity_compensation():
+    tracker = make_tracker()
+    tracker.on_message(make_motor_state(velocity=0.0, torque=20.0))
+    status = tracker.build_status(
+        time.monotonic(),
+        TrackerContext(gravity_compensation_active=True),
+    )
+    assert status.level == DiagnosticStatus.WARN
+    assert status.message == "high torque"
 
 
 def test_idle_torque_uses_resolved_threshold_from_params():
