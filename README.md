@@ -100,6 +100,7 @@ launch arguments listed below.
 |-----------------|--------|---------|
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | on |
 | `rebotarm/control/arm_status` | `/rebotarm/arm_status` (latched) | on |
+| `rebotarm/control/gravity_compensation` | `/rebotarm/arm_status` (latched) | on (with arm status monitor) |
 | `rebotarm/joints/jointN` (N=1..6) | `/rebotarm/joints/jointN/state` | on |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | on |
 | `rebotarm/link/serial` | host device node | on (default `/dev/ttyACM0`, Seeed standard) |
@@ -181,7 +182,8 @@ rebotarm_monitor/
 ├── parameters.py       # declare + load ROS parameters
 ├── domain/             # HealthTracker contract + TrackerContext
 ├── trackers/           # one file per concern (joint_states, per_joint,
-│                       # arm_status, gripper, serial_link, can_bus, process)
+│                       # arm_status, gravity_compensation, gripper,
+│                       # serial_link, can_bus, process)
 ├── adapters/           # SysFsReader, ProcessInspector, DevicePathInspector
 └── support/            # diagnostics helpers, rate window
 ```

@@ -14,6 +14,7 @@ from .adapters.process_info import ProcessInspector
 from .adapters.sysfs import SysFsReader
 from .domain.tracker import HealthTracker
 from .trackers.arm_status import ArmStatusTracker
+from .trackers.gravity_compensation import GravityCompensationTracker
 from .trackers.can_bus import CanBusTracker
 from .trackers.gripper import GripperTracker
 from .trackers.joint_states import JointStatesTracker
@@ -71,9 +72,10 @@ def build_trackers(
             )
 
     if p["enable_arm_status_monitor"]:
+        arm_status_topic = p["arm_status_topic"]
         trackers.append(
             ArmStatusTracker(
-                topic=p["arm_status_topic"],
+                topic=arm_status_topic,
                 params={
                     "arm_status_stale_timeout_s": p["arm_status_stale_timeout_s"],
                     "arm_status_warn_on_snapshot_age": p[
@@ -84,6 +86,7 @@ def build_trackers(
                 },
             )
         )
+        trackers.append(GravityCompensationTracker(topic=arm_status_topic))
 
     if p["enable_gripper_monitor"]:
         trackers.append(

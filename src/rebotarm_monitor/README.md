@@ -51,6 +51,7 @@ The launch picks one of two aggregator configs based on `enable_can_monitor`:
 |------|--------|--------|
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | rate, stale timeout, finite values, value jumps, high velocity, high effort |
 | `rebotarm/control/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
+| `rebotarm/control/gravity_compensation` | `/rebotarm/arm_status` | `gravity_compensation_active` when `state_machine == GRAVITY_COMP` (not inferred from `mode`); `state_machine`, `mode`, `enabled`, `control_loop_active` |
 | `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque, `status_code` |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
 | `rebotarm/link/serial` | host device node | path exists, character device, read/write permissions |
