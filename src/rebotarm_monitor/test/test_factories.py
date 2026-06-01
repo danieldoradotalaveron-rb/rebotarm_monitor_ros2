@@ -36,6 +36,8 @@ def base_params(**overrides) -> dict:
         "max_abs_joint_torque_nm": 8.0,
         "idle_velocity_threshold_rad_s": 0.05,
         "idle_torque_warn_nm": 3.0,
+        "per_joint_max_abs_torque_nm": {},
+        "per_joint_idle_torque_warn_nm": {},
         "max_joint_position_jump_rad": 0.5,
         "max_joint_torque_jump_nm": 3.0,
         "expected_enabled_status_code": 1,
@@ -101,6 +103,82 @@ def test_can_and_process_added_when_enabled():
     kinds = [type(t) for t in trackers]
     assert kinds.count(CanBusTracker) == 2
     assert kinds.count(ProcessHealthTracker) == 1
+
+
+def _per_joint_trackers(trackers: list) -> list[PerJointTracker]:
+    return [t for t in trackers if isinstance(t, PerJointTracker)]
+
+
+def test_empty_override_maps_use_global_torque_thresholds():
+    trackers = _per_joint_trackers(
+        build_trackers(
+            base_params(
+                joint_names=["joint1", "joint2"],
+                enable_serial_monitor=False,
+                enable_arm_status_monitor=False,
+                enable_gripper_monitor=False,
+                enable_joint_states_monitor=False,
+            )
+        )
+    )
+    assert len(trackers) == 2
+    for tracker in trackers:
+        assert tracker.params["max_abs_joint_torque_nm"] == 8.0
+        assert tracker.params["idle_torque_warn_nm"] == 3.0
+
+
+def test_per_joint_max_torque_override():
+    trackers = _per_joint_trackers(
+        build_trackers(
+            base_params(
+                joint_names=["joint1", "joint3"],
+                per_joint_max_abs_torque_nm={"joint3": 10.0},
+                enable_serial_monitor=False,
+                enable_arm_status_monitor=False,
+                enable_gripper_monitor=False,
+                enable_joint_states_monitor=False,
+            )
+        )
+    )
+    by_name = {t.joint_name: t for t in trackers}
+    assert by_name["joint1"].params["max_abs_joint_torque_nm"] == 8.0
+    assert by_name["joint3"].params["max_abs_joint_torque_nm"] == 10.0
+
+
+def test_per_joint_idle_torque_override():
+    trackers = _per_joint_trackers(
+        build_trackers(
+            base_params(
+                joint_names=["joint1", "joint3"],
+                per_joint_idle_torque_warn_nm={"joint3": 5.0},
+                enable_serial_monitor=False,
+                enable_arm_status_monitor=False,
+                enable_gripper_monitor=False,
+                enable_joint_states_monitor=False,
+            )
+        )
+    )
+    by_name = {t.joint_name: t for t in trackers}
+    assert by_name["joint1"].params["idle_torque_warn_nm"] == 3.0
+    assert by_name["joint3"].params["idle_torque_warn_nm"] == 5.0
+
+
+def test_each_per_joint_tracker_gets_distinct_params_dict():
+    trackers = _per_joint_trackers(
+        build_trackers(
+            base_params(
+                joint_names=["joint1", "joint3"],
+                per_joint_max_abs_torque_nm={"joint3": 10.0},
+                enable_serial_monitor=False,
+                enable_arm_status_monitor=False,
+                enable_gripper_monitor=False,
+                enable_joint_states_monitor=False,
+            )
+        )
+    )
+    assert trackers[0].params is not trackers[1].params
+    assert trackers[0].params["max_abs_joint_torque_nm"] == 8.0
+    assert trackers[1].params["max_abs_joint_torque_nm"] == 10.0
 
 
 def test_disabling_concerns_drops_trackers():

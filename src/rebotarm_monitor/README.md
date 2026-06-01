@@ -96,7 +96,10 @@ Most-used parameters:
 | `max_abs_velocity_rad_s` | `10.0` |
 | `max_abs_effort_nm` | `8.0` |
 | `idle_velocity_threshold_rad_s` | `0.05` |
-| `idle_torque_warn_nm` | `3.0` |
+| `idle_torque_warn_nm` | `3.0` (global fallback for per-joint idle torque WARN) |
+| `max_abs_joint_torque_nm` | `8.0` (global fallback for per-joint high torque WARN) |
+| `per_joint_idle_torque_warn_nm` | `{}` (optional map: joint name → Nm; missing keys use `idle_torque_warn_nm`) |
+| `per_joint_max_abs_torque_nm` | `{}` (optional map: joint name → Nm; missing keys use `max_abs_joint_torque_nm`) |
 | `arm_status_stale_timeout_s` | `1.0` |
 | `arm_status_warn_on_snapshot_age` | `false` |
 | `gripper_stale_timeout_s` | `1.0` |

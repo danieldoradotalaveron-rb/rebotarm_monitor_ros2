@@ -89,6 +89,20 @@ def test_idle_torque_warning_triggers_when_arm_still():
     assert "high torque while idle" in status.message
 
 
+def test_idle_torque_uses_resolved_threshold_from_params():
+    params = dict(DEFAULT_PARAMS)
+    params["idle_torque_warn_nm"] = 5.0
+    tracker = PerJointTracker("j1", "/rebotarm/joints/j1/state", params)
+    tracker.on_message(make_motor_state(velocity=0.0, torque=4.0))
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert status.level == DiagnosticStatus.OK
+
+    tracker.on_message(make_motor_state(velocity=0.0, torque=5.5))
+    status = tracker.build_status(time.monotonic(), TrackerContext())
+    assert status.level == DiagnosticStatus.WARN
+    assert "high torque while idle" in status.message
+
+
 def test_non_finite_values_yield_error():
     tracker = make_tracker()
     tracker.on_message(make_motor_state(position=float("nan")))

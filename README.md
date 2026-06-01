@@ -168,6 +168,20 @@ ros2 launch rebotarm_monitor monitor.launch.py \
 For the full list (per-joint thresholds, status-code mapping, etc.) edit
 `config/monitor.yaml`.
 
+Per-joint torque diagnostics use global defaults (`max_abs_joint_torque_nm`,
+`idle_torque_warn_nm`) unless overridden in YAML:
+
+```yaml
+per_joint_idle_torque_warn_nm:
+  joint3: 5.0
+per_joint_max_abs_torque_nm:
+  joint3: 10.0
+```
+
+Keys must match `joint_names`. Empty maps `{}` preserve the default behavior for
+all joints. See [`src/rebotarm_monitor/README.md`](src/rebotarm_monitor/README.md)
+for the full parameter table.
+
 ## Architecture
 
 The package follows a small hexagonal layout. Trackers are the strategies,

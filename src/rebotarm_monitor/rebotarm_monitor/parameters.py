@@ -44,6 +44,8 @@ _PARAM_SPECS: tuple[tuple[str, Any], ...] = (
     ("max_abs_joint_torque_nm", 8.0),
     ("idle_velocity_threshold_rad_s", 0.05),
     ("idle_torque_warn_nm", 3.0),
+    ("per_joint_max_abs_torque_nm", {}),
+    ("per_joint_idle_torque_warn_nm", {}),
     ("max_joint_position_jump_rad", 0.5),
     ("max_joint_torque_jump_nm", 3.0),
     ("expected_enabled_status_code", 1),
@@ -140,6 +142,41 @@ def _split_csv(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _parse_float_map(value: Any, param_name: str) -> dict[str, float]:
+    """Normalize an optional per-joint threshold override map."""
+    if value is None or value == {}:
+        return {}
+    if not isinstance(value, dict):
+        raise TypeError(
+            f"parameter '{param_name}' must be a map of joint name to float, "
+            f"got {type(value).__name__}"
+        )
+    out: dict[str, float] = {}
+    for key, raw in value.items():
+        name = str(key).strip()
+        if not name:
+            continue
+        try:
+            out[name] = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"parameter '{param_name}' entry '{name}' must be a float, "
+                f"got {raw!r}"
+            ) from exc
+    return out
+
+
+def resolve_joint_threshold(
+    joint_name: str,
+    global_value: float,
+    overrides: dict[str, float],
+) -> float:
+    """Return per-joint override when present, otherwise the global fallback."""
+    if joint_name in overrides:
+        return overrides[joint_name]
+    return global_value
+
+
 def load_params(node: Node) -> dict[str, Any]:
     """Read every declared parameter, coerce it, and return a plain dict."""
     params: dict[str, Any] = {}
@@ -147,6 +184,12 @@ def load_params(node: Node) -> dict[str, Any]:
         raw = node.get_parameter(name).value
         if name in ("joint_names", "can_interfaces"):
             params[name] = _split_csv(raw)
+            continue
+        if name in (
+            "per_joint_max_abs_torque_nm",
+            "per_joint_idle_torque_warn_nm",
+        ):
+            params[name] = _parse_float_map(raw, name)
             continue
         caster = _TYPES.get(name)
         params[name] = caster(raw) if caster is not None else raw

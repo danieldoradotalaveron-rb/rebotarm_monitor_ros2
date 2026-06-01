@@ -13,6 +13,7 @@ from .adapters.device_path import DevicePathInspector
 from .adapters.process_info import ProcessInspector
 from .adapters.sysfs import SysFsReader
 from .domain.tracker import HealthTracker
+from .parameters import resolve_joint_threshold
 from .trackers.arm_status import ArmStatusTracker
 from .trackers.gravity_compensation import GravityCompensationTracker
 from .trackers.can_bus import CanBusTracker
@@ -49,25 +50,37 @@ def build_trackers(
         )
 
     if p["enable_per_joint_monitor"]:
-        pj_params = {
+        pj_base = {
             "per_joint_stale_timeout_s": p["per_joint_stale_timeout_s"],
             "max_abs_joint_velocity_rad_s": p["max_abs_joint_velocity_rad_s"],
-            "max_abs_joint_torque_nm": p["max_abs_joint_torque_nm"],
             "idle_velocity_threshold_rad_s": p["idle_velocity_threshold_rad_s"],
-            "idle_torque_warn_nm": p["idle_torque_warn_nm"],
             "max_joint_position_jump_rad": p["max_joint_position_jump_rad"],
             "max_joint_torque_jump_nm": p["max_joint_torque_jump_nm"],
             "expected_enabled_status_code": p["expected_enabled_status_code"],
             "allow_disabled_status_code": p["allow_disabled_status_code"],
             "disabled_status_code": p["disabled_status_code"],
         }
+        max_torque_overrides = p["per_joint_max_abs_torque_nm"]
+        idle_torque_overrides = p["per_joint_idle_torque_warn_nm"]
         prefix = p["joint_state_topic_prefix"].rstrip("/")
         for name in p["joint_names"]:
             trackers.append(
                 PerJointTracker(
                     joint_name=name,
                     topic=f"{prefix}/{name}/state",
-                    params=pj_params,
+                    params={
+                        **pj_base,
+                        "max_abs_joint_torque_nm": resolve_joint_threshold(
+                            name,
+                            p["max_abs_joint_torque_nm"],
+                            max_torque_overrides,
+                        ),
+                        "idle_torque_warn_nm": resolve_joint_threshold(
+                            name,
+                            p["idle_torque_warn_nm"],
+                            idle_torque_overrides,
+                        ),
+                    },
                 )
             )
 

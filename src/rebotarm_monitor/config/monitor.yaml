@@ -21,6 +21,8 @@
     max_abs_joint_torque_nm: 8.0
     idle_velocity_threshold_rad_s: 0.05
     idle_torque_warn_nm: 3.0
+    per_joint_max_abs_torque_nm: {}
+    per_joint_idle_torque_warn_nm: {}
     max_joint_position_jump_rad: 0.5
     max_joint_torque_jump_nm: 3.0
     expected_enabled_status_code: 1
