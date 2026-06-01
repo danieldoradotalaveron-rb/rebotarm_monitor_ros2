@@ -28,7 +28,7 @@ metrics (SocketCAN counters, driver process health), and publishes
 
 ## Requirements
 
-- ROS 2 Jazzy (also tested on Humble).
+- ROS 2 Jazzy (future compatibility with Humble).
 - A sourced ROS 2 workspace that provides `rebotarm_msgs` (built from the
   Seeed reBot Arm driver workspace with `colcon`).
 - A running `reBotArmController` node.
