@@ -42,7 +42,7 @@ The launch picks one of two aggregator configs based on `enable_can_monitor`:
 
 | `enable_can_monitor` | Config file | rqt groups |
 |----------------------|-------------|------------|
-| `false` (default) | `diagnostic_aggregator.yaml` | Gripper, Hardware, Joints, Link, System |
+| `false` (default) | `diagnostic_aggregator.yaml` | Control, Gripper, Hardware, Joints, Link, System |
 | `true` | `diagnostic_aggregator_can.yaml` | the above + Bus |
 
 ## Diagnostic names
@@ -50,8 +50,8 @@ The launch picks one of two aggregator configs based on `enable_can_monitor`:
 | Name | Source | Checks |
 |------|--------|--------|
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | rate, stale timeout, finite values, value jumps, high velocity, high effort |
+| `rebotarm/control/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
 | `rebotarm/joints/jointN` | `/rebotarm/joints/jointN/state` | stale timeout, finite values, value jumps, high velocity, high torque, idle torque, `status_code` |
-| `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` | `enabled`, `mode`, `control_loop_active`, `state_machine`, `error_codes` |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | stale timeout, finite values, high velocity, high torque, `status_code` |
 | `rebotarm/link/serial` | host device node | path exists, character device, read/write permissions |
 | `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` | `operstate`, `rx_errors`, `tx_errors`, `rx_dropped`, `tx_dropped` (only when `enable_can_monitor:=true`) |

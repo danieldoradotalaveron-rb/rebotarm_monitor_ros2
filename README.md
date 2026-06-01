@@ -61,8 +61,8 @@ The launch loads one of two aggregator configs based on `enable_can_monitor`:
 
 | `enable_can_monitor` | rqt tree (`RebotArm/…`) |
 |----------------------|------------------------|
-| `false` (default — USB/serial) | Gripper, Hardware, Joints, Link, System |
-| `true` (SocketCAN) | Gripper, Hardware, Joints, Link, System, **Bus** |
+| `false` (default — USB/serial) | Control, Gripper, Hardware, Joints, Link, System |
+| `true` (SocketCAN) | Control, Gripper, Hardware, Joints, Link, System, **Bus** |
 
 ### Driver channel and link monitoring
 
@@ -99,8 +99,8 @@ launch arguments listed below.
 | Diagnostic name | Source | Default |
 |-----------------|--------|---------|
 | `rebotarm/hardware/joint_states` | `/rebotarm/joint_states` | on |
+| `rebotarm/control/arm_status` | `/rebotarm/arm_status` (latched) | on |
 | `rebotarm/joints/jointN` (N=1..6) | `/rebotarm/joints/jointN/state` | on |
-| `rebotarm/hardware/arm_status` | `/rebotarm/arm_status` (latched) | on |
 | `rebotarm/gripper/state` | `/rebotarm/gripper/state` | on |
 | `rebotarm/link/serial` | host device node | on (default `/dev/ttyACM0`, Seeed standard) |
 | `rebotarm/bus/<iface>` | `/sys/class/net/<iface>` counters | off (only with `enable_can_monitor:=true`) |
