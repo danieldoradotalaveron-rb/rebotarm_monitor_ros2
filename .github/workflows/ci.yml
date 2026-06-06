@@ -1,5 +1,5 @@
-# Validate rebotarm_monitor (ament_python) on ROS 2 Jazzy.
-# Workspace layout: src/rebotarm_monitor/ (not package-at-repo-root).
+# Unit tests and lint for rebotarm_monitor — no driver fork or colcon.
+# Integration tests (rebotarm_msgs, built package, trackers) run in the driver fork CI.
 
 name: CI
 
@@ -20,7 +20,7 @@ on:
       - ".github/workflows/ci.yml"
 
 jobs:
-  rebotarm_monitor:
+  unit:
     runs-on: ubuntu-24.04
 
     steps:
@@ -32,45 +32,14 @@ jobs:
         with:
           required-ros-distributions: jazzy
 
-      - name: Install colcon and rosdep
+      - name: Install test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            python3-colcon-common-extensions \
-            python3-rosdep \
-            python3-pytest
+          sudo apt-get install -y python3-pytest
 
-      - name: Init rosdep
-        run: |
-          sudo rosdep init || true
-          rosdep update
-
-      - name: Fetch rebotarm_msgs (monitor dependency, not in rosdep)
-        run: |
-          git clone --depth 1 \
-            https://github.com/Seeed-Projects/reBotArmController_ROS2.git /tmp/driver
-          cp -r /tmp/driver/src/rebotarm_msgs src/
-
-      - name: Install dependencies
+      - name: Pytest (unit)
         run: |
           source /opt/ros/jazzy/setup.bash
-          rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
-
-      - name: Build rebotarm_monitor
-        run: |
-          source /opt/ros/jazzy/setup.bash
-          colcon build --packages-up-to rebotarm_monitor --symlink-install
-
-      - name: Pytest
-        run: |
-          source /opt/ros/jazzy/setup.bash
-          source install/setup.bash
           cd src/rebotarm_monitor
-          python3 -m pytest test -q
-
-      - name: Colcon test
-        run: |
-          source /opt/ros/jazzy/setup.bash
-          source install/setup.bash
-          colcon test --packages-select rebotarm_monitor
-          colcon test-result --verbose
+          export PYTHONPATH="${PWD}:${PWD}/rebotarm_monitor${PYTHONPATH:+:${PYTHONPATH}}"
+          python3 -m pytest test/unit -q

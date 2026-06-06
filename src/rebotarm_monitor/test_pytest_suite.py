@@ -20,7 +20,7 @@ class PytestSuite(unittest.TestCase):
     def test_pytest_suite_passes(self) -> None:
         import pytest
 
-        test_dir = Path(__file__).resolve().parent / "test"
+        test_dir = Path(__file__).resolve().parent / "test" / "unit"
         exit_code = pytest.main(["-q", str(test_dir)])
         self.assertEqual(
             int(exit_code),

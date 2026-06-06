@@ -237,20 +237,20 @@ in `factories.build_trackers`.
 
 ## Testing
 
-Unit tests live next to the package and use the in-memory adapter fakes
-(`FakeSysFsReader`, `FakeProcessInspector`, `FakeDevicePathInspector`) so no
-real CAN interface, TTY device, or driver process is needed.
-
-```bash
-colcon test --packages-select rebotarm_monitor
-colcon test-result --verbose
-```
-
-Or run pytest directly inside the package once the workspace is sourced:
+**Unit tests** (no driver) — run in this repo's CI:
 
 ```bash
 cd src/rebotarm_monitor
-pytest
+source /opt/ros/jazzy/setup.bash
+export PYTHONPATH="${PWD}:${PWD}/rebotarm_monitor${PYTHONPATH:+:${PYTHONPATH}}"
+python3 -m pytest test/unit -q
+```
+
+**Integration tests** (built package, `rebotarm_msgs`, trackers) live in the driver fork
+at `integration/rebotarm_monitor/test/`. With driver + overlay built:
+
+```bash
+just test-monitor-integration   # or just test-monitor (unit + integration)
 ```
 
 ## Repository layout
